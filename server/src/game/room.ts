@@ -23,6 +23,7 @@ import {
   MARKET_START_PRICE,
   TICK_MS,
   DEFENSE_DEFS,
+  GARRISON_CAP,
   buildingRange,
   buildingAttack,
   TRADE_LOT,
@@ -280,12 +281,17 @@ export class Game {
       s.research = { id: b.research.id, progress: tech ? Math.min(1, b.research.elapsed / (tech.time || 1)) : 0 };
     }
     if (b.targetId !== undefined) s.targetId = b.targetId; // torre atirando
+    if (b.garrison?.length) s.garrison = b.garrison.length; // unidades dentro
     return s;
   }
 
   private popOf(playerId: number): number {
     let total = 0;
     for (const u of this.units.values()) if (u.owner === playerId) total += UNIT_DEFS[u.type].pop;
+    // unidades GUARNECIDAS dentro de prédios ainda contam na população (AoE2)
+    for (const b of this.buildings.values()) {
+      if (b.garrison) for (const u of b.garrison) if (u.owner === playerId) total += UNIT_DEFS[u.type].pop;
+    }
     return total;
   }
 
@@ -348,6 +354,12 @@ export class Game {
         break;
       case 'repair':
         this.cmdRepair(playerId, cmd.unitIds, cmd.targetId);
+        break;
+      case 'garrison':
+        this.cmdGarrison(playerId, cmd.unitIds, cmd.targetId);
+        break;
+      case 'unload':
+        this.cmdUnload(playerId, cmd.buildingId);
         break;
       case 'gather':
         this.cmdGather(playerId, cmd.unitIds, cmd.targetId);
@@ -539,6 +551,7 @@ export class Game {
       }
       const b = this.buildings.get(id);
       if (b && b.owner === playerId) {
+        this.ejectGarrison(b); // libera quem estava dentro (não perde as unidades)
         this.unblockFootprint(b.tileX, b.tileY, BUILDING_DEFS[b.type].size);
         this.buildings.delete(id);
         this.retargetAttackersOf(id);
@@ -558,6 +571,82 @@ export class Game {
     }
   }
 
+  /** Guarnecer: mandar unidades ENTRAREM numa torre/Centro próprio (some do mapa,
+   *  protegidas; o prédio atira +1 flecha por unidade dentro). */
+  private cmdGarrison(playerId: number, unitIds: number[], targetId: number): void {
+    const b = this.buildings.get(targetId);
+    if (!b || b.owner !== playerId || b.progress < 1 || !GARRISON_CAP[b.type]) return;
+    for (const u of this.ownedUnits(playerId, unitIds)) {
+      this.clearTasks(u);
+      u.garrisonTargetId = targetId;
+      if (this.pathUnitAdjacentTo(u, b.tileX, b.tileY, BUILDING_DEFS[b.type].size)) {
+        u.state = 'movingToGarrison';
+      } else {
+        this.enterGarrison(u, b); // já colado no prédio → entra na hora
+      }
+    }
+  }
+
+  /** Unidade entra no prédio (removida do mapa, guardada em b.garrison). Respeita
+   *  a capacidade — excedente fica de fora, ocioso. */
+  private enterGarrison(u: Unit, b: Building): void {
+    const cap = GARRISON_CAP[b.type] ?? 0;
+    u.garrisonTargetId = undefined;
+    if ((b.garrison?.length ?? 0) >= cap) {
+      u.state = 'idle';
+      return;
+    }
+    this.units.delete(u.id);
+    this.retargetAttackersOf(u.id); // quem mirava nela desiste
+    (b.garrison ??= []).push(u);
+  }
+
+  /** Ejetar: devolve TODAS as unidades guarnecidas ao mapa, ao redor do prédio. */
+  private cmdUnload(playerId: number, buildingId: number): void {
+    const b = this.buildings.get(buildingId);
+    if (!b || b.owner !== playerId) return;
+    this.ejectGarrison(b);
+  }
+
+  private ejectGarrison(b: Building): void {
+    const g = b.garrison;
+    if (!g || g.length === 0) return;
+    const size = BUILDING_DEFS[b.type].size;
+    const cx = Math.round(b.tileX + size / 2);
+    const cy = Math.round(b.tileY + size / 2);
+    const spots = collectSpreadTiles(this.grid, cx, cy, g.length);
+    g.forEach((u, i) => {
+      const t = spots[i] ?? spots[spots.length - 1] ?? { x: cx, y: cy };
+      u.x = t.x + 0.5;
+      u.y = t.y + 0.5;
+      this.clearTasks(u);
+      u.state = 'idle';
+      this.units.set(u.id, u);
+    });
+    b.garrison = [];
+  }
+
+  private updateMovingToGarrison(u: Unit, dt: number): void {
+    this.advanceAlongPath(u, dt);
+    if (u.path.length > 0) return;
+    const b = this.buildings.get(u.garrisonTargetId ?? -1);
+    if (!b || b.progress < 1 || !GARRISON_CAP[b.type]) {
+      u.garrisonTargetId = undefined;
+      u.state = 'idle';
+      return;
+    }
+    const size = BUILDING_DEFS[b.type].size;
+    const nx = Math.max(b.tileX, Math.min(u.x, b.tileX + size - 1));
+    const ny = Math.max(b.tileY, Math.min(u.y, b.tileY + size - 1));
+    const d = Math.hypot(nx + 0.5 - u.x, ny + 0.5 - u.y);
+    if (d <= 1.6) {
+      this.enterGarrison(u, b);
+    } else if (!this.pathUnitAdjacentTo(u, b.tileX, b.tileY, size)) {
+      u.state = 'idle';
+      u.garrisonTargetId = undefined;
+    }
+  }
+
   private clearTasks(u: Unit): void {
     u.path = [];
     u.moveQueue = [];
@@ -567,6 +656,7 @@ export class Game {
     u.buildTargetId = undefined;
     u.buildQueue = [];
     u.attackTargetId = undefined;
+    u.garrisonTargetId = undefined;
   }
 
   private pathUnitTo(u: Unit, tx: number, ty: number): void {
@@ -1092,6 +1182,9 @@ export class Game {
       case 'building':
         this.updateBuilding(u, dt);
         break;
+      case 'movingToGarrison':
+        this.updateMovingToGarrison(u, dt);
+        break;
       case 'movingToAttack':
         this.updateMovingToAttack(u, dt);
         break;
@@ -1352,11 +1445,31 @@ export class Game {
       }
       if (target && b.attackTimer <= 0) {
         b.attackTimer = def.cooldown;
-        target.hp -= Math.max(1, buildingAttack(b.type, age, p?.techs) - this.unitArmor(target));
-        if (target.hp <= 0) {
-          this.units.delete(target.id);
-          this.retargetAttackersOf(target.id);
-          b.targetId = undefined;
+        const dmg = buildingAttack(b.type, age, p?.techs);
+        const arrows = 1 + (b.garrison?.length ?? 0); // +1 flecha por unidade dentro
+        if (arrows <= 1) {
+          target.hp -= Math.max(1, dmg - this.unitArmor(target));
+          if (target.hp <= 0) {
+            this.units.delete(target.id);
+            this.retargetAttackersOf(target.id);
+            b.targetId = undefined;
+          }
+        } else {
+          // guarnecido: dispara nos N inimigos mais próximos (defesa de área)
+          const enemies = [...this.units.values()]
+            .filter((e) => e.owner !== b.owner)
+            .map((e) => ({ e, d: Math.hypot(e.x - cx, e.y - cy) }))
+            .filter((o) => o.d <= range)
+            .sort((a, z) => a.d - z.d)
+            .slice(0, arrows);
+          for (const { e } of enemies) {
+            e.hp -= Math.max(1, dmg - this.unitArmor(e));
+            if (e.hp <= 0) {
+              this.units.delete(e.id);
+              this.retargetAttackersOf(e.id);
+            }
+          }
+          if (!this.units.has(target.id)) b.targetId = undefined;
         }
       }
     }

@@ -33,6 +33,7 @@ export type UnitState =
   | 'returning'      // levando recursos ao depósito
   | 'movingToBuild'
   | 'building'
+  | 'movingToGarrison' // indo entrar numa torre/Centro (guarnição)
   | 'movingToAttack'
   | 'attacking';
 
@@ -71,6 +72,9 @@ export interface BuildingSnap {
   research?: { id: string; progress: number };
   /** Alvo atual (torres de vigia atirando — o cliente desenha a flecha). */
   targetId?: number;
+  /** Quantas unidades estão GUARNECIDAS dentro (torre/Centro) — o cliente mostra
+   *  a contagem e desenha flechas extras. */
+  garrison?: number;
 }
 
 export interface NodeSnap {

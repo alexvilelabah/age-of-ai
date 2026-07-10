@@ -23,6 +23,10 @@ export type GameCommand =
   | { kind: 'delete'; ids: number[] }
   // reparar um prédio PRÓPRIO pronto e danificado com aldeões (recupera vida gastando recurso)
   | { kind: 'repair'; unitIds: number[]; targetId: number }
+  // guarnecer: colocar unidades DENTRO de uma torre/Centro próprio (protege + flechas extras)
+  | { kind: 'garrison'; unitIds: number[]; targetId: number }
+  // ejetar: tira todas as unidades guarnecidas de volta pro mapa
+  | { kind: 'unload'; buildingId: number }
   // targetId: nó de recurso OU fazenda concluída do próprio jogador
   | { kind: 'gather'; unitIds: number[]; targetId: number }
   // colocar um prédio novo, ou (mesmo tile/tipo) designar aldeões a uma obra existente.

@@ -121,6 +121,13 @@ export const DEFENSE_DEFS: Partial<Record<BuildingType, DefenseDef>> = {
 export const DEFENSE_RANGE_PER_AGE = 0.5;
 export const DEFENSE_ATTACK_PER_AGE = 1.5;
 
+/** Capacidade de GUARNIÇÃO (quantas unidades cabem dentro pra se proteger). Cada
+ *  unidade guarnecida faz o prédio atirar uma flecha a mais (até a capacidade). */
+export const GARRISON_CAP: Partial<Record<BuildingType, number>> = {
+  town_center: 10,
+  watch_tower: 5,
+};
+
 export const TRAIN_QUEUE_MAX = 5;
 
 // ---------- Eras (estilo AoE2) ----------

@@ -38,6 +38,8 @@ export interface Unit {
   /** Fila de obras (ids de prédios) a construir em sequência após a atual. */
   buildQueue?: number[];
   attackTargetId?: number;
+  /** Torre/Centro que esta unidade está indo guarnecer (entrar dentro). */
+  garrisonTargetId?: number;
   attackCooldown: number; // segundos até o próximo golpe
   repathTimer: number;
   aggroTimer: number;
@@ -62,6 +64,9 @@ export interface Building {
   /** Torre de vigia: alvo atual e recarga da flecha (segundos). */
   targetId?: number;
   attackTimer?: number;
+  /** Unidades GUARNECIDAS dentro (torre/Centro). NÃO vão no snapshot como
+   *  unidades — só a contagem. Voltam ao mapa ao ejetar; morrem se o prédio cai. */
+  garrison?: Unit[];
 }
 
 export interface ResNode {
