@@ -436,6 +436,9 @@ export class Hud {
         el('div', 'sel-line', t('hud.food_left', { amt: Math.ceil(b.foodLeft), icon: RESOURCE_ICONS.food })),
       );
     }
+    if (b.garrison && b.owner === this.gs.you) {
+      this.selPanel.appendChild(el('div', 'sel-line', t('hud.garrison', { n: b.garrison })));
+    }
   }
 
   private renderNodeDetail(n: NodeSnap): void {

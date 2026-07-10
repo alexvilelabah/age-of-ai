@@ -126,6 +126,7 @@ const PT: Dict = {
   'hud.construction_pct': 'Construção: {pct}%',
   'hud.food_left': 'Comida restante: {amt} {icon}',
   'hud.remaining': 'Restante: {amt} / {total} {icon}',
+  'hud.garrison': '🛡 {n} dentro — tecla U ejeta',
   // HUD — ações
   'hud.build': 'Construir',
   'hud.train': 'Treinar',
@@ -269,6 +270,7 @@ const EN: Dict = {
   'hud.construction_pct': 'Construction: {pct}%',
   'hud.food_left': 'Food left: {amt} {icon}',
   'hud.remaining': 'Remaining: {amt} / {total} {icon}',
+  'hud.garrison': '🛡 {n} inside — press U to eject',
   'hud.build': 'Build',
   'hud.train': 'Train',
   'hud.research_verb': 'Research',
@@ -410,6 +412,7 @@ const ES: Dict = {
   'hud.construction_pct': 'Construcción: {pct}%',
   'hud.food_left': 'Comida restante: {amt} {icon}',
   'hud.remaining': 'Restante: {amt} / {total} {icon}',
+  'hud.garrison': '🛡 {n} dentro — tecla U expulsa',
   'hud.build': 'Construir',
   'hud.train': 'Entrenar',
   'hud.research_verb': 'Investigar',

@@ -3,7 +3,7 @@
 // Shift/Ctrl), comandos (botão direito) e posicionamento de prédios.
 
 import type { BuildingType, GameCommand } from '@age/shared';
-import { BUILDING_DEFS, TILE_WATER } from '@age/shared';
+import { BUILDING_DEFS, GARRISON_CAP, TILE_WATER } from '@age/shared';
 import type { GameState } from '../state';
 import { music } from '../music';
 import type { Sfx } from './audio';
@@ -287,6 +287,15 @@ export class GameInput {
       }
       return;
     }
+    // Ejetar (U): tira as unidades guarnecidas do prédio selecionado de volta ao mapa.
+    if (e.key === 'u' || e.key === 'U') {
+      const b = this.gs.selectedBuilding();
+      if (b && b.owner === this.gs.you && b.garrison) {
+        this.deps.onCommand({ kind: 'unload', buildingId: b.id });
+        this.sfx.uiClick();
+      }
+      return;
+    }
     // grupos de controle: Ctrl+1..9 salva a seleção; 1..9 seleciona o grupo;
     // apertar o número de novo em seguida centraliza a câmera nele (AoE2)
     if (/^[1-9]$/.test(e.key)) {
@@ -482,6 +491,12 @@ export class GameInput {
           if (hasVillager && (b.progress ?? 1) >= 1 && b.hp < (BUILDING_DEFS[b.type]?.hp ?? b.hp)) {
             this.mark('build', w.x, w.y, b.id);
             this.cmd({ kind: 'repair', unitIds, targetId: b.id });
+            return;
+          }
+          // torre/Centro próprio pronto + unidades → GUARNECER (entram dentro)
+          if ((b.progress ?? 1) >= 1 && GARRISON_CAP[b.type]) {
+            this.mark('build', w.x, w.y, b.id);
+            this.cmd({ kind: 'garrison', unitIds, targetId: b.id });
             return;
           }
           // prédio próprio completo sem ação de gather/build: cai para mover

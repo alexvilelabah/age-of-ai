@@ -2110,20 +2110,47 @@ export class Renderer {
     }
 
     // prédios de defesa atirando (torre de vigia + Centro da Cidade; alvo vem no
-    // snapshot em b.targetId; a flecha sai do alto do prédio)
+    // snapshot em b.targetId; a flecha sai do alto do prédio). Guarnecido = uma
+    // salva de 1+N flechas (N = unidades dentro).
     for (const b of this.gs.buildings.values()) {
       const def = DEFENSE_DEFS[b.type];
       if (!def || (b.progress ?? 1) < 1 || b.targetId == null) continue;
       const tgt = this.gs.units.get(b.targetId);
       if (!tgt) continue;
-      const phase = (now + b.id * 137) % (def.cooldown * 1000);
-      if (phase >= flight) continue;
       const tp = this.gs.unitPos(tgt, now);
       const size = BUILDING_DEFS[b.type]?.size ?? 1;
       const ax = px(b.tileX + size / 2, b.tileY + size / 2);
       // topo do prédio (o Centro da Cidade é bem maior que a torre)
       const ay = py(b.tileX + size / 2, b.tileY + size / 2) - hh * (b.type === 'town_center' ? 3.6 : 3.2);
-      drawArrow(ax, ay, px(tp.x, tp.y), py(tp.x, tp.y) - hh * 0.7, phase / flight);
+      const cd = def.cooldown * 1000;
+      const arrows = 1 + (b.garrison ?? 0);
+      for (let k = 0; k < arrows; k++) {
+        const phase = (now + b.id * 137 + k * 90) % cd; // defasa a salva
+        if (phase >= flight) continue;
+        drawArrow(ax, ay, px(tp.x, tp.y), py(tp.x, tp.y) - hh * 0.7, phase / flight);
+      }
+    }
+
+    // badge de GUARNIÇÃO: quantas unidades estão dentro da torre/Centro
+    for (const b of this.gs.buildings.values()) {
+      if (!b.garrison) continue;
+      const size = BUILDING_DEFS[b.type]?.size ?? 1;
+      const bx = px(b.tileX + size / 2, b.tileY + size / 2);
+      const by = py(b.tileX + size / 2, b.tileY + size / 2) - hh * (b.type === 'town_center' ? 3.3 : 2.9);
+      ctx.fillStyle = 'rgba(20,16,10,0.82)';
+      ctx.beginPath();
+      ctx.arc(bx, by, Math.max(7, hh * 0.55), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(230,190,90,0.9)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.fillStyle = '#f4e4c8';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `bold ${Math.max(9, Math.round(hh * 0.72))}px Georgia, serif`;
+      ctx.fillText(String(b.garrison), bx, by + 0.5);
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
     }
 
     // --- números de dano flutuantes ---
