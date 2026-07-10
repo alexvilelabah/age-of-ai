@@ -1,7 +1,7 @@
 // Tela 3: Sala — lista de jogadores (cor, pronto, coroa de host), toggle
 // "Pronto", "Iniciar partida" (só host), "Sair da sala" e chat.
 
-import type { RoomPlayer } from '@age/shared';
+import type { GameMode, RoomPlayer } from '@age/shared';
 import { MAX_PLAYERS_PER_ROOM, MIN_PLAYERS_TO_START } from '@age/shared';
 import { el } from '../ui';
 
@@ -12,6 +12,7 @@ export interface RoomScreenDeps {
   onChat: (text: string) => void;
   onAddBot: () => void;
   onRemoveBot: () => void;
+  onSetMode: (mode: GameMode) => void;
 }
 
 export class RoomScreen {
@@ -27,6 +28,8 @@ export class RoomScreen {
 
   private players: RoomPlayer[] = [];
   private myId = -1;
+  private mode: GameMode = 'normal';
+  private modeBtns: { m: GameMode; btn: HTMLButtonElement }[] = [];
 
   constructor(private deps: RoomScreenDeps) {
     this.el = el('div', 'screen');
@@ -37,6 +40,22 @@ export class RoomScreen {
 
     this.rowsEl = el('div', 'player-rows');
     card.appendChild(this.rowsEl);
+
+    // Modo de jogo (só o host muda): Normal x Batalha/Rápido.
+    const modeRow = el('div', 'row mode-row');
+    modeRow.appendChild(el('span', 'mode-label', 'Modo:'));
+    const modeOpts: { m: GameMode; label: string; title: string }[] = [
+      { m: 'normal', label: 'Normal', title: 'Começa do zero e desenvolve a economia (padrão).' },
+      { m: 'batalha', label: 'Batalha (rápido)', title: 'Começa cheio de recursos e já na Idade dos Castelos — direto pro combate.' },
+    ];
+    for (const o of modeOpts) {
+      const btn = el('button', 'btn mode-btn', o.label);
+      btn.title = o.title;
+      btn.addEventListener('click', () => this.deps.onSetMode(o.m));
+      this.modeBtns.push({ m: o.m, btn });
+      modeRow.appendChild(btn);
+    }
+    card.appendChild(modeRow);
 
     const actions = el('div', 'row');
     this.readyBtn = el('button', 'btn primary', 'Pronto');
@@ -85,15 +104,22 @@ export class RoomScreen {
     this.chatInput.value = '';
   }
 
-  setState(roomId: string, players: RoomPlayer[], myId: number): void {
+  setState(roomId: string, players: RoomPlayer[], myId: number, mode: GameMode = 'normal'): void {
     this.players = Array.isArray(players) ? players : [];
     this.myId = myId;
+    this.mode = mode;
     const host = this.players.find((p) => p.isHost);
     this.roomTitle.textContent = host ? `Sala de ${host.name}` : `Sala ${roomId}`;
     this.renderRows();
 
     const me = this.players.find((p) => p.id === myId);
     const isHost = me?.isHost ?? false;
+
+    // Modo de jogo: destaca o ativo; só o host pode trocar.
+    for (const { m, btn } of this.modeBtns) {
+      btn.classList.toggle('primary', m === this.mode);
+      btn.disabled = !isHost;
+    }
     this.readyBtn.textContent = me?.ready ? 'Não estou pronto' : 'Pronto';
     this.readyBtn.classList.toggle('hidden', isHost);
 

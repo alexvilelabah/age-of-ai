@@ -1,7 +1,7 @@
 // Lobby: conexões, salas, chat e transição sala -> partida.
 
 import { MAX_PLAYERS_PER_ROOM, MIN_PLAYERS_TO_START, PLAYER_COLORS } from '@age/shared';
-import type { ClientMessage, RoomPlayer, RoomSummary, ServerMessage } from '@age/shared';
+import type { ClientMessage, GameMode, RoomPlayer, RoomSummary, ServerMessage } from '@age/shared';
 import { Game, type RoomMember } from './game/room';
 
 export interface Connection {
@@ -26,6 +26,7 @@ interface Room {
   members: Map<number, RoomPlayerState>; // playerId -> estado
   inGame: boolean;
   game: Game | null;
+  mode: GameMode; // 'normal' | 'batalha' (escolhido pelo host)
 }
 
 const ROOM_ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -71,6 +72,9 @@ export class Lobby {
         break;
       case 'createRoom':
         this.createRoom(conn);
+        break;
+      case 'setMode':
+        this.setMode(conn, msg.mode);
         break;
       case 'joinRoom':
         this.joinRoom(conn, msg.roomId);
@@ -129,6 +133,17 @@ export class Lobby {
 
   // ---------------- Salas ----------------
 
+  /** Host escolhe o modo (Normal/Batalha) antes de iniciar. */
+  private setMode(conn: Connection, mode: GameMode): void {
+    if (!conn.roomId) return;
+    const room = this.rooms.get(conn.roomId);
+    if (!room || room.inGame) return;
+    if (room.hostId !== conn.id) return; // só o host muda
+    if (mode !== 'normal' && mode !== 'batalha') return;
+    room.mode = mode;
+    this.broadcastRoomState(room.id);
+  }
+
   private genRoomId(): string {
     let id: string;
     do {
@@ -149,6 +164,7 @@ export class Lobby {
       members: new Map(),
       inGame: false,
       game: null,
+      mode: 'normal',
     };
     room.members.set(conn.id, { id: conn.id, ready: false, joinOrder: this.joinCounter++ });
     this.rooms.set(id, room);
@@ -324,6 +340,7 @@ export class Lobby {
         if (c) c.send(msg);
       },
       () => this.onGameOver(room.id),
+      room.mode,
     );
     room.game = game;
     room.inGame = true;
@@ -421,7 +438,7 @@ export class Lobby {
         isBot: !!m.isBot,
       };
     });
-    const msg: ServerMessage = { type: 'roomState', roomId, players };
+    const msg: ServerMessage = { type: 'roomState', roomId, players, mode: room.mode };
     for (const m of room.members.values()) this.conns.get(m.id)?.send(msg);
   }
 }

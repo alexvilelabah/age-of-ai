@@ -15,6 +15,8 @@ import {
   POP_CAP_MAX,
   SNAPSHOT_TICKS,
   STARTING_RESOURCES,
+  BATTLE_STARTING_RESOURCES,
+  BATTLE_STARTING_AGE,
   TECH_DEFS,
   MARKET_PRICE_MAX,
   MARKET_PRICE_MIN,
@@ -38,6 +40,7 @@ import type {
   BuildingSnap,
   BuildingType,
   GameCommand,
+  GameMode,
   MapData,
   MarketPrices,
   NodeSnap,
@@ -91,20 +94,22 @@ export class Game {
     members: RoomMember[],
     private readonly send: SendFn,
     private readonly onGameOver: (winner: number, winnerName: string) => void,
+    mode: GameMode = 'normal',
   ) {
     const gen = generateMap(members.length);
     this.grid = gen.grid;
     this.map = { size: gen.grid.size, tiles: gen.grid.tiles };
     this.nextId = gen.nextId;
 
+    const battle = mode === 'batalha';
     members.forEach((m) => {
       this.players.set(m.id, {
         id: m.id,
         name: m.name,
         color: m.color,
-        resources: { ...STARTING_RESOURCES },
+        resources: { ...(battle ? BATTLE_STARTING_RESOURCES : STARTING_RESOURCES) },
         defeated: false,
-        age: 1,
+        age: battle ? BATTLE_STARTING_AGE : 1,
         techs: new Set<string>(),
       });
       if (m.isBot) this.botIds.add(m.id);

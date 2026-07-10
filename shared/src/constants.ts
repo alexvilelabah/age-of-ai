@@ -22,6 +22,10 @@ export const TILE_WATER = 1;
 export const MAX_PLAYERS_PER_ROOM = 4;
 export const MIN_PLAYERS_TO_START = 2;
 export const STARTING_RESOURCES: Resources = { food: 250, wood: 250, gold: 100, stone: 100 };
+// Modo "Batalha/Rápido": começa cheio de recursos e numa era avançada, para ir
+// direto ao combate (partida rápida — e ótimo pra gravar o gameplay).
+export const BATTLE_STARTING_RESOURCES: Resources = { food: 20000, wood: 20000, gold: 20000, stone: 10000 };
+export const BATTLE_STARTING_AGE = 3; // Idade dos Castelos: quartel/arquearia/estábulo já liberados
 export const START_VILLAGERS = 3;
 export const POP_CAP_MAX = 75;
 

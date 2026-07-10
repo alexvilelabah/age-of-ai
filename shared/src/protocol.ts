@@ -37,8 +37,13 @@ export type GameCommand =
 /** Preços do mercado (ouro por lote de 100), compartilhados pela sala. */
 export type MarketPrices = Record<'food' | 'wood' | 'stone', number>;
 
+/** Modo da partida: 'normal' (economia do zero) ou 'batalha' (recursos de sobra,
+ * já numa era avançada — jogo rápido, direto pro combate). */
+export type GameMode = 'normal' | 'batalha';
+
 export type ClientMessage =
   | { type: 'setName'; name: string; clientId?: string }
+  | { type: 'setMode'; mode: GameMode } // apenas host: escolhe Normal/Batalha na sala
   | { type: 'listRooms' }
   | { type: 'createRoom' }
   | { type: 'joinRoom'; roomId: string }
@@ -74,7 +79,7 @@ export type ServerMessage =
   | { type: 'nameOk' }              // nome aceito -> pode ir pro lobby
   | { type: 'nameTaken' }           // nome já em uso -> escolha outro
   | { type: 'roomList'; rooms: RoomSummary[] }
-  | { type: 'roomState'; roomId: string; players: RoomPlayer[] }
+  | { type: 'roomState'; roomId: string; players: RoomPlayer[]; mode: GameMode }
   | { type: 'leftRoom' }
   | { type: 'error'; message: string }
   | { type: 'chat'; from: string; text: string }
