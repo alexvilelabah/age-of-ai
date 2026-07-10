@@ -1,0 +1,20 @@
+{
+  "name": "browser-empires",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
+    "build": "npm run build -w client",
+    "smoke": "node scripts/smoke.mjs"
+  }
+}

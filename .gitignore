@@ -1,0 +1,22 @@
+# Dependencias e builds
+node_modules/
+dist/
+*.log
+
+# Cloudflare Tunnel (binario grande + arquivos temporarios/segredos)
+cloudflared.exe
+cloudflared_log.txt
+link_temporario.txt
+.tunnel/
+.cloudflared/
+
+# Ferramentas locais / sessao
+.claude/
+
+# Pastas que NAO fazem parte do jogo (outros projetos / apps decompilados / backups)
+Nova pasta (2)/
+world-of-claudecraft-main/
+_sprites_backup_procedural-era-set/
+art-in/
+image/
+Gemini_Generated_Image_*.png

@@ -1,0 +1,111 @@
+// Carregador de SPRITES de prédio (PNGs em /public/sprites/). Se existir um
+// sprite pro tipo (e opcionalmente pra era), o renderer desenha a imagem no
+// lugar da arte procedural; se não existir, cai no desenho por código.
+// Mesmo espírito do sistema de sons (arquivo-ou-reserva).
+//
+// IMPORTANTE: usar só arte LIVRE ou gerada por IA que é do usuário — nunca
+// assets extraídos do AoE2 ou de jogos comerciais.
+//
+// VARIANTES POR ERA: cada prédio pode evoluir de visual por era (estilo AoE2).
+// Arquivo base `<type>.png` serve todas as eras (reserva). Se existir
+// `<type>_<era>.png` (ex.: house_2.png), ele é usado quando o dono está naquela
+// era; sem o arquivo daquela era, usa a era inferior mais próxima e, por fim, o
+// base. Só se tenta carregar as eras em que o prédio pode existir (>= ageReq).
+
+import type { BuildingType } from '@age/shared';
+import { BUILDING_DEFS, MAX_AGE } from '@age/shared';
+
+/** Ajuste de encaixe do sprite no tile (por tipo). Tudo afinável por print. */
+export interface SpriteFit {
+  file: string;
+  /** Largura desenhada = largura do losango do footprint × scale. */
+  scale: number;
+  /** Deslocamento vertical da base, em frações da meia-altura do tile (+ desce). */
+  dropY: number;
+}
+
+const BUILDING_SPRITES: Partial<Record<BuildingType, SpriteFit>> = {
+  watch_tower: { file: 'watch_tower.png', scale: 1.25, dropY: 0.4 },
+  market: { file: 'market.png', scale: 1.15, dropY: 0.3 },
+  house: { file: 'house.png', scale: 1.3, dropY: 0.28 },
+  stable: { file: 'stable.png', scale: 1.1, dropY: 0.3 },
+  town_center: { file: 'town_center.png', scale: 1.05, dropY: 0.3 },
+  barracks: { file: 'barracks.png', scale: 1.1, dropY: 0.3 },
+  blacksmith: { file: 'blacksmith.png', scale: 1.35, dropY: 0.22 },
+  archery_range: { file: 'archery_range.png', scale: 1.15, dropY: 0.3 },
+  mill: { file: 'mill.png', scale: 1.3, dropY: 0.28 },
+  lumber_camp: { file: 'lumber_camp.png', scale: 1.3, dropY: 0.28 },
+  mining_camp: { file: 'mining_camp.png', scale: 1.3, dropY: 0.28 },
+  // FAZENDA e MURO ficam PROCEDURAIS (a pedido): a fazenda desenhada por código já
+  // estava boa; o muro é tile 1×1 que se repete/conecta em qualquer direção — sprite
+  // reto só bateria numa diagonal (precisaria de set direcional + lógica de vizinho).
+};
+
+// Tamanho RELATIVO por era: o prédio CRESCE a cada upgrade. A última era (4) é o
+// tamanho "normal" (×1); as anteriores aparecem menores. (índice = era; 0 não usado)
+const ERA_SIZE = [1, 0.72, 0.82, 0.91, 1.0];
+
+export class Sprites {
+  // por tipo: mapa era->img (era 0 = arquivo base, reserva universal)
+  private imgs = new Map<BuildingType, Map<number, HTMLImageElement>>();
+  private fits = new Map<BuildingType, SpriteFit>();
+
+  /** Dispara o carregamento dos PNGs presentes. Ausentes ficam sem sprite. */
+  preload(base = '/sprites/'): void {
+    for (const [type, fit] of Object.entries(BUILDING_SPRITES) as [BuildingType, SpriteFit][]) {
+      this.fits.set(type, fit);
+      const perEra = new Map<number, HTMLImageElement>();
+      this.imgs.set(type, perEra);
+      const load = (era: number, file: string): void => {
+        const img = new Image();
+        img.onload = () => { perEra.set(era, img); };
+        img.onerror = () => { /* arquivo ausente: usa reserva/procedural */ };
+        img.src = base + file;
+      };
+      // base (sem sufixo) = reserva pra qualquer era
+      load(0, fit.file);
+      // variantes por era: <type>_<era>.png, só das eras em que o prédio existe
+      const dot = fit.file.lastIndexOf('.');
+      const stem = fit.file.slice(0, dot), ext = fit.file.slice(dot);
+      const ageReq = BUILDING_DEFS[type].ageReq;
+      for (let a = ageReq; a <= MAX_AGE; a++) load(a, `${stem}_${a}${ext}`);
+    }
+  }
+
+  /** Sprite pra este tipo na era dada, ou null (então usa o desenho por código).
+   *  Preferência: era exata → era inferior mais próxima → base. */
+  get(type: BuildingType, age = 1): { img: HTMLImageElement; fit: SpriteFit } | null {
+    const perEra = this.imgs.get(type);
+    const baseFit = this.fits.get(type);
+    if (!perEra || !baseFit) return null;
+    // aplica o crescimento por era na escala (era atual do dono, não a do arquivo usado)
+    const mul = ERA_SIZE[Math.min(MAX_AGE, Math.max(1, age))] ?? 1;
+    const fit = mul === 1 ? baseFit : { ...baseFit, scale: baseFit.scale * mul };
+    for (let a = age; a >= 1; a--) { const img = perEra.get(a); if (img) return { img, fit }; }
+    const b = perEra.get(0);
+    return b ? { img: b, fit } : null;
+  }
+}
+
+/** Sprites de ÁRVORE (variações sorteadas por posição). Estáticas, sem era.
+ *  tree_1.png, tree_2.png, ... — se nenhuma existir, o renderer usa a árvore
+ *  procedural. Mesmo espírito do fallback dos prédios. */
+export class TreeSprites {
+  private imgs: (HTMLImageElement | undefined)[] = [];
+
+  preload(base = '/sprites/', count = 8): void {
+    for (let i = 1; i <= count; i++) {
+      const img = new Image();
+      img.onload = () => { this.imgs[i - 1] = img; };
+      img.onerror = () => { /* ausente: usa árvore procedural */ };
+      img.src = `${base}tree_${i}.png`;
+    }
+  }
+
+  /** Uma variação estável para o seed dado (posição da árvore), ou null. */
+  get(seed: number): HTMLImageElement | null {
+    const list = this.imgs.filter((x): x is HTMLImageElement => !!x);
+    if (!list.length) return null;
+    return list[Math.abs(seed) % list.length];
+  }
+}
