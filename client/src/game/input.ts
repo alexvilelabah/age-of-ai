@@ -9,7 +9,7 @@ import { music } from '../music';
 import type { Sfx } from './audio';
 import type { Camera } from './camera';
 import type { UIState } from './uistate';
-import { ghostTile } from './uistate';
+import { ghostTile, wallLineTiles } from './uistate';
 
 export interface InputDeps {
   onCommand: (cmd: GameCommand) => void;
@@ -157,8 +157,13 @@ export class GameInput {
 
     if (e.button === 0) {
       if (this.ui.placement) {
-        // Ctrl/Shift segurado: continua no modo de construção (várias casas seguidas)
-        this.tryPlaceAt(pos, e.ctrlKey || e.shiftKey);
+        if (this.ui.placement === 'wall') {
+          // muralha: inicia o ARRASTO — a linha inteira é construída ao soltar
+          this.ui.wallDrag = ghostTile(this.ui, this.cam, 'wall');
+        } else {
+          // Ctrl/Shift segurado: continua no modo de construção (várias casas seguidas)
+          this.tryPlaceAt(pos, e.ctrlKey || e.shiftKey);
+        }
         return;
       }
       this.leftDown = true;
@@ -172,6 +177,7 @@ export class GameInput {
       e.preventDefault();
       if (this.ui.placement) {
         this.ui.placement = null;
+        this.ui.wallDrag = null;
         return;
       }
       this.handleRightClick(pos);
@@ -206,6 +212,11 @@ export class GameInput {
       this.mmDragging = false;
       return;
     }
+    if (e.button === 0 && this.ui.wallDrag) {
+      // soltou o arrasto de muralha: constrói a linha inteira
+      this.finishWallDrag();
+      return;
+    }
     if (e.button === 0 && this.leftDown) {
       this.leftDown = false;
       const pos = this.canvasPos(e);
@@ -229,6 +240,7 @@ export class GameInput {
     if (e.key === 'Escape') {
       if (this.ui.placement) {
         this.ui.placement = null;
+        this.ui.wallDrag = null;
       } else if (this.gs.selection.size > 0) {
         this.gs.selection.clear();
       }
@@ -482,6 +494,32 @@ export class GameInput {
 
   startPlacement(type: BuildingType): void {
     this.ui.placement = type;
+    this.ui.wallDrag = null;
+  }
+
+  /** Fim do arrasto de muralha: constrói uma LINHA de muros do início ao cursor.
+   *  Tiles ocupados (prédio/torre no meio, ou água) são PULADOS — o que já existe
+   *  vira parte da muralha sem quebrar a linha. Limita ao que dá pra pagar. */
+  private finishWallDrag(): void {
+    const start = this.ui.wallDrag;
+    this.ui.wallDrag = null;
+    if (!start) return;
+    const end = ghostTile(this.ui, this.cam, 'wall');
+    const villagers = this.gs.selectedOwnUnits().filter((u) => u.type === 'villager');
+    const unitIds = villagers.map((u) => u.id);
+    const cost = BUILDING_DEFS.wall.cost.stone ?? 10;
+    let budget = Math.floor((this.gs.me()?.resources?.stone ?? 0) / cost);
+    let built = 0;
+    for (const t of wallLineTiles(start, end)) {
+      if (budget <= 0) break;
+      if (!this.gs.canPlace('wall', t.x, t.y)) continue; // ocupado/água: pula
+      this.deps.onBuildCommand('wall', t.x, t.y, unitIds, true); // enfileira em sequência
+      budget--;
+      built++;
+    }
+    if (built > 0) this.sfx.place();
+    // a ferramenta de muralha segue ativa (desenhar outro trecho); sai com botão
+    // direito ou Esc — igual ao Age of Empires.
   }
 
   private tryPlaceAt(pos: { x: number; y: number }, keepPlacing = false): void {

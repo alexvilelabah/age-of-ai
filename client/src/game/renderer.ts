@@ -11,7 +11,7 @@ import { ISO_HH, ISO_HW } from './camera';
 import { Ambient } from './ambient';
 import { Sprites, TreeSprites, type SpriteFit } from './sprites';
 import type { UIState } from './uistate';
-import { ghostTile } from './uistate';
+import { ghostTile, wallLineTiles } from './uistate';
 
 export const RESOURCE_COLORS: Record<ResourceType, string> = {
   food: '#d3625c',
@@ -1611,7 +1611,7 @@ export class Renderer {
   /** Muralha: segmento de muro de pedra com ameias baixas — bloqueia passagem. */
   private drawWall(ctx: CanvasRenderingContext2D, st: BSite): number {
     const { T, R, B, L, th, m, prog } = st;
-    const H = Math.max(5, th * 0.6) * prog;
+    const H = Math.max(8, th * 1.05) * prog; // muralha mais ALTA (era 0.6, ficava baixinha)
     const t1 = this.walls(ctx, T, R, B, L, H, m.stone);
     this.wallLines(ctx, L, B, H, 2, true);
     this.wallLines(ctx, B, R, H, 2, true);
@@ -2635,14 +2635,39 @@ export class Renderer {
   ): void {
     const type = ui.placement;
     if (!type || !ui.hasMouse) return;
+    if (!BUILDING_DEFS[type]) return;
+
+    // Muralha em ARRASTO: prévia da LINHA inteira (só nos tiles livres — os
+    // ocupados por prédio/água são pulados, viram parte do muro).
+    if (type === 'wall' && ui.wallDrag) {
+      for (const t of wallLineTiles(ui.wallDrag, ghostTile(ui, cam, 'wall'))) {
+        if (this.gs.canPlace('wall', t.x, t.y)) this.drawGhostAt(ctx, px, py, hh, 'wall', t.x, t.y, now);
+      }
+      return;
+    }
+
+    const t = ghostTile(ui, cam, type);
+    this.drawGhostAt(ctx, px, py, hh, type, t.x, t.y, now);
+  }
+
+  /** Um fantasma de posicionamento num tile: diamante verde/vermelho + o prédio
+   *  translúcido em cima. */
+  private drawGhostAt(
+    ctx: CanvasRenderingContext2D,
+    px: (x: number, y: number) => number,
+    py: (x: number, y: number) => number,
+    hh: number,
+    type: BuildingType,
+    tileX: number,
+    tileY: number,
+    now: number,
+  ): void {
     const def = BUILDING_DEFS[type];
     if (!def) return;
-    const t = ghostTile(ui, cam, type);
-    const valid = this.gs.canPlace(type, t.x, t.y);
-    const s = def.size;
+    const valid = this.gs.canPlace(type, tileX, tileY);
 
     // terreno ocupado (embaixo do prédio, mostra válido/inválido)
-    this.isoDiamond(ctx, px, py, t.x, t.y, s);
+    this.isoDiamond(ctx, px, py, tileX, tileY, def.size);
     ctx.fillStyle = valid ? 'rgba(90,205,100,0.3)' : 'rgba(225,75,60,0.38)';
     ctx.fill();
     ctx.strokeStyle = valid ? 'rgba(120,230,130,0.95)' : 'rgba(240,95,80,0.95)';
@@ -2654,8 +2679,8 @@ export class Renderer {
       id: -1,
       owner: this.gs.you,
       type,
-      tileX: t.x,
-      tileY: t.y,
+      tileX,
+      tileY,
       hp: def.hp,
       progress: 1,
       queue: [],

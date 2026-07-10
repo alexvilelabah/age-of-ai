@@ -27,12 +27,40 @@ export interface UIState {
   hasMouse: boolean;
   /** Retângulo de seleção (pixels de tela) durante arrasto, ou null. */
   boxRect: { x0: number; y0: number; x1: number; y1: number } | null;
+  /** Ao arrastar pra construir MURALHA: tile de início do arrasto, ou null.
+   *  Enquanto setado, a prévia mostra a linha inteira e ao soltar constrói. */
+  wallDrag: { x: number; y: number } | null;
   /** Marcadores de ordem recentes (podados pelo renderer). */
   orders: OrderMarker[];
 }
 
 export function createUIState(): UIState {
-  return { placement: null, mouseX: 0, mouseY: 0, hasMouse: false, boxRect: null, orders: [] };
+  return { placement: null, mouseX: 0, mouseY: 0, hasMouse: false, boxRect: null, wallDrag: null, orders: [] };
+}
+
+/** Tiles (1x1) de uma linha de muralha do início do arrasto até o cursor. Segue
+ *  a reta pelo eixo dominante (contíguo, sem repetir) — reta em X/Y ou diagonal,
+ *  como no Age of Empires. */
+export function wallLineTiles(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): { x: number; y: number }[] {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const steps = Math.max(Math.abs(dx), Math.abs(dy)) || 0;
+  const tiles: { x: number; y: number }[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i <= steps; i++) {
+    const f = steps === 0 ? 0 : i / steps;
+    const x = Math.round(start.x + dx * f);
+    const y = Math.round(start.y + dy * f);
+    const k = `${x},${y}`;
+    if (!seen.has(k)) {
+      seen.add(k);
+      tiles.push({ x, y });
+    }
+  }
+  return tiles;
 }
 
 /** Tile superior-esquerdo do fantasma de posicionamento (centrado no cursor). */
