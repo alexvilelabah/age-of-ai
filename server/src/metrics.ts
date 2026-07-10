@@ -22,46 +22,29 @@ export interface Metrics {
   procUptimeS: number;
 }
 
-// --- CPU: delta entre leituras. Usa os.cpus(); no Android/Termux esse array às
-// vezes vem VAZIO, então cai pro /proc/stat (linha "cpu ") como fallback. ---
-function cpuTotals(): { idle: number; total: number } | null {
-  const cpus = os.cpus();
-  if (cpus.length > 0) {
-    let idle = 0;
-    let total = 0;
-    for (const c of cpus) {
-      for (const t of Object.values(c.times)) total += t;
-      idle += c.times.idle;
-    }
-    return { idle, total };
-  }
-  try {
-    const first = fs.readFileSync('/proc/stat', 'utf8').split('\n')[0]; // "cpu u n s idle iowait irq softirq steal..."
-    const p = first.trim().split(/\s+/).slice(1).map((v) => parseInt(v, 10));
-    if (p.length >= 4 && p.every((v) => Number.isFinite(v))) {
-      return { idle: p[3] + (p[4] || 0), total: p.reduce((a, b) => a + b, 0) };
-    }
-  } catch { /* sem /proc */ }
-  return null;
-}
-let prevCpu = cpuTotals();
+// --- CPU: no Android o /proc/stat e o os.cpus() ficam BLOQUEADOS (sem root),
+// então medimos o uso do PRÓPRIO processo do servidor via process.cpuUsage()
+// (usa getrusage, não depende de /proc) — que é o que importa: "o quanto o jogo
+// pesa". É a % de um núcleo (Node é ~1 thread, então ~0-100%). ---
+let prevProc = process.cpuUsage();
+let prevProcT = Date.now();
 
 function cpuPercent(): number | null {
-  const cur = cpuTotals();
-  const prev = prevCpu;
-  prevCpu = cur;
-  if (!cur || !prev) return null;
-  const dTotal = cur.total - prev.total;
-  const dIdle = cur.idle - prev.idle;
-  if (dTotal <= 0) return null;
-  const pct = (1 - dIdle / dTotal) * 100;
+  const now = Date.now();
+  const u = process.cpuUsage(); // micros acumulados (user+system)
+  const dMicros = u.user + u.system - (prevProc.user + prevProc.system);
+  const dMs = now - prevProcT;
+  prevProc = u;
+  prevProcT = now;
+  if (dMs <= 0) return null;
+  const pct = (dMicros / 1000 / dMs) * 100;
   return Math.round(Math.max(0, Math.min(100, pct)) * 10) / 10;
 }
 
 function coreCount(): number {
   const n = os.cpus().length;
   if (n > 0) return n;
-  try { return (fs.readFileSync('/proc/stat', 'utf8').match(/^cpu\d+/gm) || []).length; } catch { return 0; }
+  try { return (fs.readFileSync('/proc/cpuinfo', 'utf8').match(/^processor\s*:/gm) || []).length; } catch { return 0; }
 }
 
 // --- Temperatura: maior valor legível dos sensores (best-effort) ---
@@ -176,7 +159,7 @@ canvas{width:100%;height:44px;display:block;margin-top:6px}
 var K=new URLSearchParams(location.search).get('k')||'';
 var cards=[
  {id:'tempC',label:'Temperatura',unit:'C',max:70,graph:1},
- {id:'cpuPct',label:'CPU',unit:'%',max:100,graph:1},
+ {id:'cpuPct',label:'CPU (servidor)',unit:'%',max:100,graph:1},
  {id:'memPct',label:'Memoria (RAM)',unit:'%',max:100,graph:1,sub:function(m){return m.memUsedMB!=null?m.memUsedMB+' / '+m.memTotalMB+' MB':''}},
  {id:'diskPct',label:'Disco',unit:'%',max:100,graph:1,sub:function(m){return m.diskUsedGB!=null?m.diskUsedGB+' / '+m.diskTotalGB+' GB':''}},
  {id:'gpuPct',label:'GPU',unit:'%',max:100,graph:1},
@@ -207,7 +190,7 @@ function tick(){
   return r.json();
  }).then(function(m){
   if(!m)return;
-  document.getElementById('sub').textContent='atualizando ao vivo · '+m.cores+' nucleos';
+  document.getElementById('sub').textContent='atualizando ao vivo'+(m.cores?' · '+m.cores+' nucleos':'');
   document.getElementById('foot').textContent='Uptime do sistema: '+up(m.sysUptimeS)+'  |  servidor: '+up(m.procUptimeS);
   cards.forEach(function(c){
    var v=m[c.id],e=el[c.id];
