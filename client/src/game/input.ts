@@ -3,7 +3,7 @@
 // Shift/Ctrl), comandos (botão direito) e posicionamento de prédios.
 
 import type { BuildingType, GameCommand } from '@age/shared';
-import { BUILDING_DEFS } from '@age/shared';
+import { BUILDING_DEFS, TILE_WATER } from '@age/shared';
 import type { GameState } from '../state';
 import { music } from '../music';
 import type { Sfx } from './audio';
@@ -315,6 +315,9 @@ export class GameInput {
     const w = this.cam.screenToWorld(pos.x, pos.y);
     const pick = this.gs.pickAt(w.x, w.y, performance.now());
     if (!pick) {
+      const tx = Math.floor(w.x), ty = Math.floor(w.y);
+      const inside = tx >= 0 && ty >= 0 && tx < this.gs.map.size && ty < this.gs.map.size;
+      this.sfx.selectTerrain(inside && this.gs.map.tiles[ty * this.gs.map.size + tx] === TILE_WATER);
       if (!shift) this.gs.selection.clear();
       return;
     }

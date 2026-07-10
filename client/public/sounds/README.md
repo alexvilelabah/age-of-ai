@@ -13,17 +13,25 @@ Tip: short sounds (0.3–2s), already "trimmed" (no long silence at the start/en
 
 ### Selection (clicking an object)
 - `select_villager.mp3` — villager (short voice / "yes sir")
+- `select_villager_1.mp3`, `select_villager_2.mp3`, `select_villager_3.mp3` — varied villager acknowledgements
 - `select_swordsman.mp3` — swordsman (metal clink / grunt)
 - `select_archer.mp3` — archer
 - `select_knight.mp3` — **horse neighing**
 - `select_building.mp3` — building (thud)
 - `select_resource.mp3` — tree/mine (chime)
+- `select_grass.mp3` / `select_water.mp3` — clicking empty terrain
+- `select_<building>.mp3` — one exact building, for example `select_house.mp3`
 
 ### Commands (right click)
 - `move.mp3` — move ("yes"/footstep)
 - `attack.mp3` — attack (shout/charge)
 - `gather.mp3` — gather
 - `build.mp3` — order construction (hammer)
+- `chop_wood.mp3` — axe striking wood (positional)
+- `mine_stone.mp3` — pickaxe striking stone (positional)
+- `mine_gold.mp3` — brighter ore strike (positional)
+- `harvest_food.mp3` — crop/leaf harvest (positional)
+- `hammer_build.mp3` — construction hammer (positional)
 - `place.mp3` — place the building
 
 ### Events

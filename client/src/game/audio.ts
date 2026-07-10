@@ -26,14 +26,24 @@ interface NoiseOpts {
 // Slot lógico -> nome do arquivo em /public/sounds/. Baixe/gere e coloque lá.
 const SAMPLE_FILES: Record<string, string> = {
   select_villager: 'select_villager.mp3',
+  select_villager_1: 'select_villager_1.mp3',
+  select_villager_2: 'select_villager_2.mp3',
+  select_villager_3: 'select_villager_3.mp3',
   select_swordsman: 'select_swordsman.mp3',
   select_archer: 'select_archer.mp3',
   select_knight: 'select_knight.mp3',      // ex.: cavalo relinchando
   select_building: 'select_building.mp3',
   select_resource: 'select_resource.mp3',
+  select_grass: 'select_grass.mp3',
+  select_water: 'select_water.mp3',
   move: 'move.mp3',
   attack: 'attack.mp3',                    // ex.: espada
   gather: 'gather.mp3',
+  chop_wood: 'chop_wood.mp3',
+  mine_stone: 'mine_stone.mp3',
+  mine_gold: 'mine_gold.mp3',
+  harvest_food: 'harvest_food.mp3',
+  hammer_build: 'hammer_build.mp3',
   build: 'build.mp3',
   place: 'place.mp3',
   ui: 'ui.mp3',
@@ -47,6 +57,10 @@ const SAMPLE_FILES: Record<string, string> = {
   music: 'music.mp3',                      // trilha de fundo (loop) — opcional
 };
 
+for (const type of ['town_center', 'house', 'barracks', 'farm', 'archery_range', 'stable', 'blacksmith', 'market', 'wall', 'watch_tower', 'mill', 'lumber_camp', 'mining_camp']) {
+  SAMPLE_FILES[`select_${type}`] = `select_${type}.mp3`;
+}
+
 export class Sfx {
   muted = false;
   private vol = 0.5;        // volume dos efeitos (0..1), ajustável pelo menu de opções
@@ -54,6 +68,8 @@ export class Sfx {
   private master: GainNode | null = null;
   private samples = new Map<string, AudioBuffer>();
   private lastHitAt = 0;
+  private workVariant = 0;
+  private voiceVariant = 0;
   // música de fundo (trilha própria, gerada; ou arquivo music.mp3 em loop)
   private musicGain: GainNode | null = null;
   private musicOn = false;
@@ -124,7 +140,7 @@ export class Sfx {
   // ---------------------------------------------------------------- toca arquivo
 
   /** Toca um arquivo de som se ele existir. Retorna true se tocou. */
-  private play(slot: string, gain = 1): boolean {
+  private play(slot: string, gain = 1, pan = 0): boolean {
     if (this.muted) return true; // "tratado" (silêncio), sem cair na reserva
     const ctx = this.ac();
     if (!ctx || !this.master) return false;
@@ -135,7 +151,11 @@ export class Sfx {
     const g = ctx.createGain();
     g.gain.value = gain;
     src.connect(g);
-    g.connect(this.master);
+    if (typeof ctx.createStereoPanner === 'function') {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, pan));
+      g.connect(p); p.connect(this.master);
+    } else g.connect(this.master);
     src.start();
     return true;
   }
@@ -209,9 +229,18 @@ export class Sfx {
   // Cada método tenta o arquivo do slot; se faltar, usa a reserva sintetizada.
 
   selectUnit(type: UnitType): void {
+    if (type === 'villager') {
+      const variant = `select_villager_${1 + (this.voiceVariant++ % 3)}`;
+      if (this.samples.has(variant) && this.play(variant)) return;
+    }
     if (this.play(`select_${type}`)) return;
     switch (type) {
-      case 'villager':  this.tone(600, 0.09, { type: 'triangle', gain: 0.34, glideTo: 780 }); break; // "sim?" curtinho
+      case 'villager': {
+        const v = this.voiceVariant % 3;
+        this.tone(v === 0 ? 185 : v === 1 ? 210 : 170, 0.12, { type: 'triangle', gain: 0.2, glideTo: v === 1 ? 245 : 155 });
+        this.noise(0.055, { delay: 0.035, type: 'bandpass', filter: 760 + v * 130, gain: 0.045 });
+        break;
+      }
       case 'swordsman': this.clink(440, 0.16); break;                                                 // tinido de armadura
       case 'archer':    this.tone(280, 0.05, { type: 'sine', gain: 0.18 }); this.noise(0.07, { filter: 3200, type: 'highpass', gain: 0.16 }); break; // corda de arco
       case 'knight':    this.tone(150, 0.2, { type: 'sawtooth', gain: 0.26, glideTo: 108 }); this.noise(0.13, { filter: 520, gain: 0.13 }); break;   // bufar do cavalo
@@ -222,6 +251,7 @@ export class Sfx {
   /** Seleção de prédio: baque de pedra (Centro/Ferraria) ou de madeira (resto),
    *  com um leve deslocamento de tom por tipo pra "cada prédio um som". */
   selectBuilding(type?: BuildingType): void {
+    if (type && this.play(`select_${type}`)) return;
     if (this.play('select_building')) return;
     const pitch: Partial<Record<BuildingType, number>> = {
       town_center: 0.9, house: 1.16, barracks: 0.98, farm: 1.28, archery_range: 1.08, stable: 0.86, blacksmith: 0.8,
@@ -236,6 +266,17 @@ export class Sfx {
     } else {
       this.knock(190 * p, 0.3);
       this.tone(150 * p, 0.12, { type: 'sine', gain: 0.18 });
+    }
+  }
+
+  selectTerrain(water: boolean): void {
+    if (this.play(water ? 'select_water' : 'select_grass', 0.55)) return;
+    if (water) {
+      this.noise(0.16, { type: 'bandpass', filter: 1050, filterTo: 520, gain: 0.09 });
+      this.tone(260, 0.12, { type: 'sine', gain: 0.045, glideTo: 220 });
+    } else {
+      this.noise(0.045, { type: 'lowpass', filter: 620, gain: 0.12 });
+      this.tone(105, 0.055, { type: 'sine', gain: 0.07, glideTo: 82 });
     }
   }
 
@@ -260,6 +301,19 @@ export class Sfx {
   }
   cmdGather(): void { if (this.play('gather')) return; this.tone(560, 0.07, { type: 'sine', gain: 0.24, glideTo: 650 }); this.noise(0.04, { filter: 1400, gain: 0.1 }); }
   cmdBuild(): void { if (this.play('build')) return; this.knock(240, 0.28); this.noise(0.08, { filter: 1100, gain: 0.16, delay: 0.09 }); }
+  work(type: NodeType | 'building', gain: number, pan: number): void {
+    if (gain <= 0.015 || this.muted) return;
+    const slot = type === 'tree' ? 'chop_wood' : type === 'stone_mine' ? 'mine_stone' :
+      type === 'gold_mine' ? 'mine_gold' : type === 'building' ? 'hammer_build' : 'harvest_food';
+    if (this.play(slot, gain, pan)) return;
+    // Pequena alternância de timbre evita o efeito de uma amostra idêntica em loop.
+    const variation = [0.91, 1, 1.08, 0.96][this.workVariant++ % 4];
+    if (type === 'tree') this.knock(145 * variation, 0.34 * gain);
+    else if (type === 'stone_mine') { this.clink(620 * variation, 0.2 * gain); this.noise(0.04, { filter: 1150 * variation, gain: 0.13 * gain }); }
+    else if (type === 'gold_mine') this.clink(1120 * variation, 0.18 * gain);
+    else if (type === 'building') this.knock(235, 0.3 * gain);
+    else this.noise(0.09, { filter: 2300, type: 'highpass', gain: 0.16 * gain });
+  }
   place(): void { if (this.play('place')) return; this.noise(0.14, { filter: 480, gain: 0.34 }); this.tone(150, 0.13, { type: 'sine', gain: 0.26, glideTo: 110 }); }
 
   uiClick(): void { if (this.play('ui', 0.7)) return; this.tone(880, 0.03, { type: 'square', gain: 0.12 }); this.tone(1250, 0.03, { type: 'square', gain: 0.06, delay: 0.015 }); }
@@ -284,11 +338,41 @@ export class Sfx {
     this.noise(0.035, { filter: 3200, type: 'highpass', gain: 0.12 });
   }
 
+  /** Pio sem formantes de voz: assobio senoidal com vibrato irregular e ar. */
+  private owlWhistle(delay: number, dur: number, freq: number, gain: number): void {
+    if (this.muted) return;
+    const ctx = this.ac();
+    if (!ctx || !this.master) return;
+    const t0 = ctx.currentTime + delay;
+    const carrier = ctx.createOscillator();
+    const vibrato = ctx.createOscillator();
+    const vibratoDepth = ctx.createGain();
+    const g = ctx.createGain();
+    carrier.type = 'sine';
+    carrier.frequency.setValueAtTime(freq * 1.08, t0);
+    carrier.frequency.exponentialRampToValueAtTime(freq, t0 + dur * 0.22);
+    carrier.frequency.exponentialRampToValueAtTime(freq * 0.82, t0 + dur);
+    vibrato.type = 'sine';
+    vibrato.frequency.value = 5.2 + Math.random() * 1.8;
+    vibratoDepth.gain.value = freq * (0.018 + Math.random() * 0.012);
+    vibrato.connect(vibratoDepth); vibratoDepth.connect(carrier.frequency);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(gain, t0 + dur * 0.12);
+    g.gain.setValueAtTime(gain * 0.82, t0 + dur * 0.48);
+    g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
+    carrier.connect(g); g.connect(this.master);
+    carrier.start(t0); vibrato.start(t0);
+    carrier.stop(t0 + dur + 0.02); vibrato.stop(t0 + dur + 0.02);
+    this.noise(dur * 0.45, { delay, type: 'bandpass', filter: freq * 1.7, gain: gain * 0.055 });
+  }
+
   /** Pio da coruja que cruza o céu (~1x/min). */
   owl(): void {
     if (this.play('owl')) return;
-    this.tone(400, 0.16, { type: 'sine', gain: 0.22, glideTo: 340 });
-    this.tone(360, 0.2, { type: 'sine', gain: 0.2, glideTo: 300, delay: 0.24 });
+    // Sem subgrave/formante de vogal: duas notas assobiadas e levemente trêmulas.
+    const pitch = 0.94 + Math.random() * 0.12;
+    this.owlWhistle(0, 0.28, 610 * pitch, 0.16);
+    this.owlWhistle(0.46, 0.56, 520 * pitch, 0.19);
   }
 
   // ---------------------------------------------------------------- música de fundo

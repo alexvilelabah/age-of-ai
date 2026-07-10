@@ -44,6 +44,10 @@ export class GameScreen {
   private sndUnits = -1;
   private sndCombatAt = 0;
   private nextOwl = 0;
+  private nextWorkSound = 0;
+  private workListenX = Number.NaN;
+  private workListenY = Number.NaN;
+  private workListenSince = 0;
 
   constructor(map: MapData, players: PlayerInfo[], you: number, private deps: GameScreenDeps) {
     this.state = new GameState(map, players, you);
@@ -173,10 +177,38 @@ export class GameScreen {
    *  treino concluído). Comparação barata por frame. */
   private playEventSounds(now: number): void {
     // coruja cruzando o céu: pio ocasional (~1x/min)
-    if (this.nextOwl === 0) this.nextOwl = now + 20000 + Math.random() * 25000;
+    if (this.nextOwl === 0) this.nextOwl = now + 25000 + Math.random() * 35000;
     else if (now >= this.nextOwl) {
       this.sfx.owl();
-      this.nextOwl = now + 45000 + Math.random() * 45000;
+      // Em média uma vez por minuto, mas nunca num intervalo mecânico.
+      this.nextOwl = now + 35000 + Math.random() * 55000;
+    }
+    if (now >= this.nextWorkSound) {
+      // Ao chegar a uma região, a atividade se apresenta; se a câmera fica ali,
+      // o ouvido se acostuma e esses impactos somem suavemente, devolvendo a paz.
+      const moved = !Number.isFinite(this.workListenX) || Math.hypot(this.cam.x - this.workListenX, this.cam.y - this.workListenY) > 1.2;
+      if (moved) {
+        this.workListenX = this.cam.x;
+        this.workListenY = this.cam.y;
+        this.workListenSince = now;
+      }
+      const settledFor = now - this.workListenSince;
+      const attention = settledFor < 2800 ? 1 : Math.max(0, 1 - (settledFor - 2800) / 6500);
+      let best: { type: import('@age/shared').NodeType | 'building'; d: number; pan: number } | null = null;
+      for (const u of this.state.units.values()) {
+        if (u.state !== 'gathering' && u.state !== 'building') continue;
+        const p = this.state.unitPos(u, now);
+        const d = Math.hypot(p.x - this.cam.x, p.y - this.cam.y);
+        if (d > 15 || (best && d >= best.d)) continue;
+        const node = u.targetId == null ? undefined : this.state.nodes.get(u.targetId);
+        const type = u.state === 'building' ? 'building' : node?.type;
+        if (!type) continue;
+        const screen = this.cam.worldToScreen(p.x, p.y);
+        best = { type, d, pan: (screen.x / Math.max(1, this.cam.viewW) - 0.5) * 1.7 };
+      }
+      if (best && attention > 0) this.sfx.work(best.type, Math.max(0, 1 - best.d / 15) ** 1.7 * 0.78 * attention, best.pan);
+      // Intervalo irregular e mais espaçado, especialmente importante nas minas.
+      this.nextWorkSound = now + 680 + Math.random() * 520;
     }
     const me = this.state.me();
     if (!me) return;

@@ -2191,6 +2191,20 @@ export class Renderer {
     }
   }
 
+  private block(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number, fill: string, stroke?: string): void {
+    ctx.fillStyle = fill;
+    ctx.fillRect(cx - w / 2, cy - h / 2, Math.max(1, w), Math.max(1, h));
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.strokeRect(cx - w / 2, cy - h / 2, Math.max(1, w), Math.max(1, h)); }
+  }
+
+  private faceDetail(ctx: CanvasRenderingContext2D, cx: number, cy: number, U: number, dir = 1): void {
+    if (U < 10) return;
+    const r = Math.max(0.65, U * 0.035);
+    ctx.fillStyle = '#251d18'; ctx.beginPath();
+    ctx.arc(cx + dir * U * 0.06, cy - U * 0.025, r, 0, Math.PI * 2);
+    ctx.arc(cx + dir * U * 0.17, cy - U * 0.015, r, 0, Math.PI * 2); ctx.fill();
+  }
+
   private drawUnit(
     ctx: CanvasRenderingContext2D,
     px: (x: number, y: number) => number,
@@ -2308,7 +2322,7 @@ export class Renderer {
     const by = sy - (moving ? Math.abs(Math.sin(ph)) * 0.07 * U : 0);
     // túnica: trapos rústicos na era 1, tecido tingido depois
     const tunic = age <= 1 ? shadeHex(color, -0.18) : color;
-    this.blob(ctx, sx, by - 1.0 * U, 0.34 * U, 0.5 * U, tunic, dark);
+    this.block(ctx, sx, by - 1.0 * U, 0.66 * U, 0.92 * U, tunic, dark);
     if (age >= 3) {
       // cinto de couro
       this.limb(ctx, sx - 0.28 * U, by - 0.88 * U, sx + 0.28 * U, by - 0.88 * U, 0.09 * U, '#4a3520');
@@ -2350,7 +2364,8 @@ export class Renderer {
     }
 
     // cabeça
-    this.blob(ctx, sx, by - 1.5 * U, 0.24 * U, 0.26 * U, skin, dark);
+    this.block(ctx, sx, by - 1.5 * U, 0.44 * U, 0.48 * U, skin, dark);
+    this.faceDetail(ctx, sx, by - 1.5 * U, U, face);
     // cobertura por era: cabelo -> chapéu de palha -> touca de couro -> feltro
     if (age <= 1) {
       this.blob(ctx, sx, by - 1.66 * U, 0.22 * U, 0.13 * U, '#5a4328');
@@ -2381,30 +2396,30 @@ export class Renderer {
 
     // torso por era
     if (age <= 1) {
-      this.blob(ctx, sx, sy - 1.05 * U, 0.38 * U, 0.52 * U, color, dark); // túnica simples
+      this.block(ctx, sx, sy - 1.05 * U, 0.72 * U, 0.98 * U, color, dark); // túnica simples
     } else if (age === 2) {
-      this.blob(ctx, sx, sy - 1.05 * U, 0.4 * U, 0.55 * U, color, dark); // gambesão
+      this.block(ctx, sx, sy - 1.05 * U, 0.76 * U, 1.02 * U, color, dark); // gambesão
       this.limb(ctx, sx, sy - 1.32 * U, sx, sy - 0.76 * U, 0.14 * U, shadeHex(color, -0.25)); // faixa
     } else if (age === 3) {
-      this.blob(ctx, sx, sy - 1.05 * U, 0.4 * U, 0.55 * U, '#9aa0a8', '#6a6e76'); // cota de malha
+      this.block(ctx, sx, sy - 1.05 * U, 0.76 * U, 1.02 * U, '#9aa0a8', '#6a6e76'); // cota de malha
       this.limb(ctx, sx, sy - 1.36 * U, sx, sy - 0.72 * U, 0.26 * U, color); // tabardo
     } else {
-      this.blob(ctx, sx, sy - 1.05 * U, 0.42 * U, 0.58 * U, steel, '#6a6e76'); // placas
+      this.block(ctx, sx, sy - 1.05 * U, 0.8 * U, 1.06 * U, steel, '#6a6e76'); // placas
       this.limb(ctx, sx, sy - 1.38 * U, sx, sy - 0.7 * U, 0.24 * U, color); // tabardo
       this.blob(ctx, sx - 0.36 * U, sy - 1.36 * U, 0.14 * U, 0.12 * U, steel, steelD); // ombreiras
       this.blob(ctx, sx + 0.36 * U, sy - 1.36 * U, 0.14 * U, 0.12 * U, steel, steelD);
     }
 
-    // escudo por era: madeira -> redondo com umbo -> grande com aro de aço
-    if (age <= 1) {
-      this.blob(ctx, sx - 0.42 * U, sy - 1.0 * U, 0.18 * U, 0.24 * U, '#8a6a3f', '#5e4326');
-    } else if (age === 2) {
-      this.blob(ctx, sx - 0.44 * U, sy - 1.0 * U, 0.22 * U, 0.3 * U, shadeHex(color, 0.1), dark);
-      this.blob(ctx, sx - 0.44 * U, sy - 1.0 * U, 0.06 * U, 0.07 * U, steel);
-    } else {
-      this.blob(ctx, sx - 0.46 * U, sy - 1.02 * U, 0.25 * U, 0.35 * U, shadeHex(color, 0.08), steelD);
-      this.blob(ctx, sx - 0.46 * U, sy - 1.02 * U, 0.07 * U, 0.08 * U, steel);
-    }
+    // Escudo angular: aro, umbo e faixa heráldica sem aumentar sua área.
+    const shx = sx - 0.45 * U, shy = sy - 1.02 * U;
+    const shieldEdge = age <= 1 ? '#5e4326' : steelD;
+    this.poly(ctx, [
+      { x: shx - 0.23 * U, y: shy - 0.31 * U }, { x: shx + 0.23 * U, y: shy - 0.31 * U },
+      { x: shx + 0.21 * U, y: shy + 0.12 * U }, { x: shx, y: shy + 0.36 * U },
+      { x: shx - 0.21 * U, y: shy + 0.12 * U },
+    ], age <= 1 ? '#8a6a3f' : shadeHex(color, 0.08), shieldEdge);
+    this.limb(ctx, shx - 0.15 * U, shy - 0.17 * U, shx + 0.14 * U, shy + 0.16 * U, 0.055 * U, age <= 1 ? '#b18a50' : steel);
+    this.blob(ctx, shx, shy, 0.065 * U, 0.075 * U, age <= 1 ? '#6c5232' : steel, shieldEdge);
 
     // braço + espada (lâmina cresce com a era)
     const armC = age >= 4 ? steel : age === 3 ? '#9aa0a8' : color;
@@ -2415,6 +2430,7 @@ export class Renderer {
 
     // cabeça por era: cabelo -> capacete -> elmo com nasal -> elmo com pluma
     this.blob(ctx, sx, sy - 1.6 * U, 0.24 * U, 0.26 * U, skin, dark);
+    this.faceDetail(ctx, sx, sy - 1.6 * U, U);
     if (age <= 1) {
       this.blob(ctx, sx, sy - 1.74 * U, 0.22 * U, 0.13 * U, '#5a4328'); // cabelo
     } else if (age === 2) {
@@ -2436,9 +2452,9 @@ export class Renderer {
 
     // corpo: tecido -> couro com faixa -> couro com ombreira de aço
     if (a === 2) {
-      this.blob(ctx, sx, sy - 1.02 * U, 0.32 * U, 0.52 * U, color, dark);
+      this.block(ctx, sx, sy - 1.02 * U, 0.62 * U, 0.98 * U, color, dark);
     } else {
-      this.blob(ctx, sx, sy - 1.02 * U, 0.33 * U, 0.53 * U, '#7a5836', '#4a3520'); // couro
+      this.block(ctx, sx, sy - 1.02 * U, 0.64 * U, 1.0 * U, '#7a5836', '#4a3520'); // couro
       this.limb(ctx, sx - 0.24 * U, sy - 1.34 * U, sx + 0.24 * U, sy - 0.86 * U, 0.12 * U, color); // faixa a tiracolo
       if (a >= 4) this.blob(ctx, sx - 0.3 * U, sy - 1.32 * U, 0.13 * U, 0.11 * U, steel, '#8a8f97'); // ombreira
     }
@@ -2450,6 +2466,7 @@ export class Renderer {
 
     // cabeça: capuz -> touca de couro -> elmo com pluma
     this.blob(ctx, sx, sy - 1.55 * U, 0.23 * U, 0.25 * U, skin, dark);
+    this.faceDetail(ctx, sx, sy - 1.55 * U, U, -1);
     if (a === 2) {
       this.blob(ctx, sx - 0.02 * U, sy - 1.66 * U, 0.27 * U, 0.18 * U, shadeHex(color, -0.2));
     } else if (a === 3) {
