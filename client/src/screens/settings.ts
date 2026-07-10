@@ -2,7 +2,7 @@
 // aberto pela engrenagem em qualquer tela. Modelado no ConnLostOverlay.
 
 import { el } from '../ui';
-import { settings, saveSettings, RENDER_SCALES, LANGS, type Lang } from '../settings';
+import { settings, RENDER_SCALES, LANGS, type Lang } from '../settings';
 import { t } from '../i18n';
 
 /** Rótulo de cada idioma no seletor (sempre no próprio idioma — assim qualquer
@@ -13,19 +13,30 @@ export interface SettingsDeps {
   onMusicVol: (v: number) => void;   // 0..1
   onSfxVol: (v: number) => void;     // 0..1
   onRenderScale: (s: number) => void; // 1 | 0.75 | 0.5
+  onLang: (lang: Lang) => void;       // troca de idioma (main decide reload x ao vivo)
 }
 
 export class SettingsOverlay {
   readonly el: HTMLElement;
   private scaleBtns: { s: number; btn: HTMLButtonElement }[] = [];
+  private card: HTMLElement;
 
   constructor(private deps: SettingsDeps) {
     this.el = el('div', 'overlay hidden');
+    this.card = this.buildCard();
+    this.el.appendChild(this.card);
+    // clicar fora do card fecha
+    this.el.addEventListener('mousedown', (e) => { if (e.target === this.el) this.hide(); });
+  }
+
+  /** Monta (ou remonta) o cartão de opções no idioma atual. */
+  private buildCard(): HTMLElement {
+    this.scaleBtns = [];
     const card = el('div', 'panel card opt-card');
     card.appendChild(el('h2', '', t('opt.title')));
 
-    // Idioma da interface — trocar recarrega a página (as telas montam o texto
-    // no construtor, então o reload re-traduz tudo de uma vez).
+    // Idioma da interface. A troca vai pro main via onLang: fora do jogo ele
+    // recarrega (reconecta ao lobby); no jogo, troca ao vivo sem derrubar a partida.
     const langRow = el('div', 'opt-row');
     langRow.appendChild(el('span', 'opt-label', t('opt.language')));
     const langBtns = el('div', 'opt-scales');
@@ -34,9 +45,7 @@ export class SettingsOverlay {
       btn.classList.toggle('active', l === settings.lang);
       btn.addEventListener('click', () => {
         if (l === settings.lang) return;
-        settings.lang = l;
-        saveSettings();
-        location.reload();
+        this.deps.onLang(l);
       });
       langBtns.appendChild(btn);
     }
@@ -66,10 +75,14 @@ export class SettingsOverlay {
     const close = el('button', 'btn primary', t('opt.close'));
     close.addEventListener('click', () => this.hide());
     card.appendChild(close);
+    return card;
+  }
 
-    this.el.appendChild(card);
-    // clicar fora do card fecha
-    this.el.addEventListener('mousedown', (e) => { if (e.target === this.el) this.hide(); });
+  /** Re-traduz o próprio menu ao vivo (usado quando o idioma muda no jogo, sem reload). */
+  retranslate(): void {
+    const fresh = this.buildCard();
+    this.card.replaceWith(fresh);
+    this.card = fresh;
   }
 
   private volumeRow(label: string, initial: number, onChange: (v: number) => void): HTMLElement {

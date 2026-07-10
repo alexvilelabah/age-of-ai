@@ -5,7 +5,7 @@ import { Net } from './net';
 import { music } from './music';
 import { toast } from './ui';
 import { settings, saveSettings } from './settings';
-import { t, AGE_NAMES, BUILDING_NAMES } from './i18n';
+import { t, applyLang, AGE_NAMES, BUILDING_NAMES } from './i18n';
 import type { BuildingType } from '@age/shared';
 import { getClientId, getSavedName, saveName } from './identity';
 import { NameScreen } from './screens/name';
@@ -53,6 +53,24 @@ const settingsOverlay = new SettingsOverlay({
   onMusicVol: (v) => { music.setVolume(v); settings.musicVol = v; saveSettings(); },
   onSfxVol: (v) => { gameScreen?.setSfxVolume(v); settings.sfxVol = v; saveSettings(); },
   onRenderScale: (s) => { gameScreen?.setRenderScale(s); settings.renderScale = s; saveSettings(); },
+  onLang: (lang) => {
+    if (current === 'game' && gameScreen) {
+      // No jogo, recarregar derrubaria a partida — então troca AO VIVO: repopula
+      // os dicionários e re-traduz o HUD e o próprio menu; conexão e estado seguem.
+      applyLang(lang);
+      saveSettings();
+      document.documentElement.lang = lang;
+      gearBtn.title = t('opt.title');
+      gearBtn.setAttribute('aria-label', t('opt.title'));
+      gameScreen.retranslate();
+      settingsOverlay.retranslate();
+    } else {
+      // Fora do jogo, reload é simples e seguro (reconecta ao lobby).
+      settings.lang = lang;
+      saveSettings();
+      location.reload();
+    }
+  },
 });
 document.body.appendChild(settingsOverlay.el);
 

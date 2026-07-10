@@ -602,16 +602,36 @@ const TECH_NAMES_ALL: Record<Lang, Record<string, string>> = {
   },
 };
 
-// Exports do idioma ATUAL (congelados no boot — trocar idioma recarrega a página).
-export const UNIT_NAMES: Record<UnitType, string> = UNIT_NAMES_ALL[getLang()];
-export const BUILDING_NAMES: Record<BuildingType, string> = BUILDING_NAMES_ALL[getLang()];
-export const NODE_NAMES: Record<NodeType, string> = NODE_NAMES_ALL[getLang()];
-export const RESOURCE_NAMES: Record<ResourceType, string> = RESOURCE_NAMES_ALL[getLang()];
-export const BUILDING_DESCS: Record<BuildingType, string> = BUILDING_DESCS_ALL[getLang()];
-export const UNIT_DESCS: Record<UnitType, string> = UNIT_DESCS_ALL[getLang()];
+// Exports do idioma ATUAL. São CÓPIAS mutáveis (não as fontes _ALL): applyLang()
+// repopula-as EM MEMÓRIA na MESMA referência, então quem indexa UNIT_NAMES[type],
+// AGE_NAMES[age] etc. a cada frame (o HUD) passa a ver o novo idioma na hora —
+// permitindo trocar de idioma no meio da partida sem recarregar (o reload
+// derrubaria a conexão e a partida).
+export const UNIT_NAMES: Record<UnitType, string> = { ...UNIT_NAMES_ALL[getLang()] };
+export const BUILDING_NAMES: Record<BuildingType, string> = { ...BUILDING_NAMES_ALL[getLang()] };
+export const NODE_NAMES: Record<NodeType, string> = { ...NODE_NAMES_ALL[getLang()] };
+export const RESOURCE_NAMES: Record<ResourceType, string> = { ...RESOURCE_NAMES_ALL[getLang()] };
+export const BUILDING_DESCS: Record<BuildingType, string> = { ...BUILDING_DESCS_ALL[getLang()] };
+export const UNIT_DESCS: Record<UnitType, string> = { ...UNIT_DESCS_ALL[getLang()] };
 /** Nomes das eras no idioma atual (índice = era; 0 vazio). Substitui o AGE_NAMES
  *  do shared (que fica em pt para o servidor). */
-export const AGE_NAMES: string[] = AGE_NAMES_ALL[getLang()];
+export const AGE_NAMES: string[] = [...AGE_NAMES_ALL[getLang()]];
+
+/** Troca o idioma da interface EM TEMPO REAL (sem reload): grava em settings e
+ *  repopula os dicionários de conteúdo nas MESMAS referências exportadas acima.
+ *  t() já lê o idioma ao vivo. Telas/HUD que montam texto estático no construtor
+ *  precisam se re-renderizar depois desta chamada. */
+export function applyLang(lang: Lang): void {
+  settings.lang = lang;
+  Object.assign(UNIT_NAMES, UNIT_NAMES_ALL[lang]);
+  Object.assign(BUILDING_NAMES, BUILDING_NAMES_ALL[lang]);
+  Object.assign(NODE_NAMES, NODE_NAMES_ALL[lang]);
+  Object.assign(RESOURCE_NAMES, RESOURCE_NAMES_ALL[lang]);
+  Object.assign(BUILDING_DESCS, BUILDING_DESCS_ALL[lang]);
+  Object.assign(UNIT_DESCS, UNIT_DESCS_ALL[lang]);
+  AGE_NAMES.length = 0;
+  AGE_NAMES.push(...AGE_NAMES_ALL[lang]);
+}
 
 /** Nome traduzido de uma tecnologia pelo id (o TECH_DEFS do shared guarda o pt). */
 export function techName(id: string): string {

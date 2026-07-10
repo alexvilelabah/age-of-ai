@@ -5,7 +5,7 @@ import { BUILDING_DEFS } from '@age/shared';
 import { GameState } from '../state';
 import { el } from '../ui';
 import { Camera } from '../game/camera';
-import { Hud } from '../game/hud';
+import { Hud, type HudDeps } from '../game/hud';
 import { GameInput } from '../game/input';
 import { Sfx } from '../game/audio';
 import { music } from '../music';
@@ -30,7 +30,8 @@ export class GameScreen {
   private cam: Camera;
   private renderer: Renderer;
   private minimap: Minimap;
-  private hud: Hud;
+  private hud!: Hud;
+  private hudDeps!: HudDeps;
   private input: GameInput;
   private connLost: ConnLostOverlay;
 
@@ -65,7 +66,7 @@ export class GameScreen {
 
     this.cam = new Camera(map.size);
 
-    this.hud = new Hud(gs, {
+    this.hudDeps = {
       onBuild: (type) => this.input.startPlacement(type),
       onTrain: (buildingId, unit) => this.deps.onCommand({ kind: 'train', buildingId, unit }),
       onCancelTrain: (buildingId, index) => this.deps.onCommand({ kind: 'cancelTrain', buildingId, index }),
@@ -75,7 +76,8 @@ export class GameScreen {
       onChat: (text) => this.deps.onChat(text),
       onIdleVillager: () => this.selectNextIdleVillager(),
       getPlacement: () => this.input.ui.placement,
-    });
+    };
+    this.createHud();
     root.appendChild(this.hud.el);
 
     this.minimap = new Minimap(gs, this.cam);
@@ -98,10 +100,6 @@ export class GameScreen {
       openChat: () => this.hud.openChat(),
     }, this.sfx);
 
-    // clique nos botões do HUD => som de UI (delegado)
-    this.hud.el.addEventListener('mousedown', (e) => {
-      if ((e.target as HTMLElement)?.closest('button')) this.sfx.uiClick();
-    });
     // primeiro gesto do usuário destrava o áudio no navegador (SFX e trilha)
     this.canvas.addEventListener('mousedown', () => { this.sfx.resume(); music.unlock(); }, { once: true });
     // carrega os arquivos de som presentes em /public/sounds/ (ausentes usam reserva)
@@ -120,6 +118,25 @@ export class GameScreen {
     }
 
     this.startLoop();
+  }
+
+  /** (Re)cria o HUD com os deps atuais + o som de clique dos botões. */
+  private createHud(): void {
+    this.hud = new Hud(this.state, this.hudDeps);
+    // clique nos botões do HUD => som de UI (delegado)
+    this.hud.el.addEventListener('mousedown', (e) => {
+      if ((e.target as HTMLElement)?.closest('button')) this.sfx.uiClick();
+    });
+  }
+
+  /** Troca de idioma no meio da partida: reconstrói o HUD (que monta texto no
+   *  construtor) já no novo idioma, SEM recarregar — canvas, câmera, estado e
+   *  conexão continuam. O minimapa mora no slot do HUD, então é re-anexado. */
+  retranslate(): void {
+    const old = this.hud.el;
+    this.createHud();
+    old.replaceWith(this.hud.el);
+    this.hud.minimapSlot.appendChild(this.minimap.el);
   }
 
   private setupResize(root: HTMLElement): void {
