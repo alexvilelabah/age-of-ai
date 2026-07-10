@@ -1,0 +1,5 @@
+# Scripts de shell precisam de fim de linha LF (rodam no Termux/Linux).
+*.sh text eol=lf
+# Scripts do Windows mantêm CRLF.
+*.bat text eol=crlf
+*.ps1 text eol=crlf
