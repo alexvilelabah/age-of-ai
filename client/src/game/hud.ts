@@ -817,6 +817,8 @@ export class Hud {
       }
     }
     if (tech.carry) parts.push(t('hud.eff_carry', { n: tech.carry }));
+    if (tech.defense?.attack) parts.push(t('hud.eff_def_attack', { n: tech.defense.attack }));
+    if (tech.defense?.range) parts.push(t('hud.eff_def_range', { n: tech.defense.range }));
     const who = tech.units.length ? ` (${tech.units.map((u) => UNIT_NAMES[u]).join(', ')})` : '';
     return `${parts.join(', ')}${who} • ${costLongText(tech.cost)} • ${tech.time}s`;
   }

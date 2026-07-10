@@ -168,6 +168,8 @@ const PT: Dict = {
   'hud.eff_range': '+{n} alcance',
   'hud.eff_gather': '+{pct}% coleta de {res}',
   'hud.eff_carry': '+{n} de carga por viagem',
+  'hud.eff_def_attack': '+{n} dano de torres/CC',
+  'hud.eff_def_range': '+{n} alcance de torres/CC',
 };
 
 const EN: Dict = {
@@ -307,6 +309,8 @@ const EN: Dict = {
   'hud.eff_range': '+{n} range',
   'hud.eff_gather': '+{pct}% {res} gathering',
   'hud.eff_carry': '+{n} carry per trip',
+  'hud.eff_def_attack': '+{n} tower/TC damage',
+  'hud.eff_def_range': '+{n} tower/TC range',
 };
 
 const ES: Dict = {
@@ -446,6 +450,8 @@ const ES: Dict = {
   'hud.eff_range': '+{n} alcance',
   'hud.eff_gather': '+{pct}% recolección de {res}',
   'hud.eff_carry': '+{n} de carga por viaje',
+  'hud.eff_def_attack': '+{n} daño de torres/CU',
+  'hud.eff_def_range': '+{n} alcance de torres/CU',
 };
 
 const STR: Record<Lang, Dict> = { pt: PT, en: EN, es: ES };
@@ -584,21 +590,21 @@ const TECH_NAMES_ALL: Record<Lang, Record<string, string>> = {
     scale_mail: 'Cota de Escamas', padded_armor: 'Armadura Acolchoada', man_at_arms: 'Homem de Armas',
     long_swordsman: 'Espada Longa', crossbow: 'Besteiro', cavalier: 'Cavaleiro Pesado', paladin: 'Paladino',
     sharp_sickles: 'Foices Afiadas', steel_axes: 'Machados de Aço', iron_picks: 'Picaretas de Ferro',
-    wheelbarrow: 'Carrinho de Mão',
+    wheelbarrow: 'Carrinho de Mão', ballistics: 'Balística', arrowslits: 'Frestas',
   },
   en: {
     forging: 'Forging', iron_casting: 'Iron Casting', fletching: 'Fletching', bodkin: 'Bodkin Arrow',
     scale_mail: 'Scale Mail', padded_armor: 'Padded Armor', man_at_arms: 'Man-at-Arms',
     long_swordsman: 'Long Swordsman', crossbow: 'Crossbowman', cavalier: 'Cavalier', paladin: 'Paladin',
     sharp_sickles: 'Sharp Sickles', steel_axes: 'Steel Axes', iron_picks: 'Iron Picks',
-    wheelbarrow: 'Wheelbarrow',
+    wheelbarrow: 'Wheelbarrow', ballistics: 'Ballistics', arrowslits: 'Arrowslits',
   },
   es: {
     forging: 'Forja', iron_casting: 'Fundición de Hierro', fletching: 'Emplumado', bodkin: 'Punta Bodkin',
     scale_mail: 'Cota de Escamas', padded_armor: 'Armadura Acolchada', man_at_arms: 'Hombre de Armas',
     long_swordsman: 'Espada Larga', crossbow: 'Ballestero', cavalier: 'Caballero Pesado', paladin: 'Paladín',
     sharp_sickles: 'Hoces Afiladas', steel_axes: 'Hachas de Acero', iron_picks: 'Picos de Hierro',
-    wheelbarrow: 'Carretilla',
+    wheelbarrow: 'Carretilla', ballistics: 'Balística', arrowslits: 'Aspilleras',
   },
 };
 

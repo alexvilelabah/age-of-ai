@@ -4,7 +4,7 @@
 // substituídos por arte dedicada nas próximas etapas.
 
 import type { BuildingSnap, BuildingType, NodeSnap, NodeType, ResourceType, UnitSnap } from '@age/shared';
-import { BUILDING_DEFS, TILE_WATER, TOWER_COOLDOWN, UNIT_DEFS, techBonus } from '@age/shared';
+import { BUILDING_DEFS, DEFENSE_DEFS, TILE_WATER, UNIT_DEFS, techBonus } from '@age/shared';
 import type { GameState } from '../state';
 import type { Camera } from './camera';
 import { ISO_HH, ISO_HW } from './camera';
@@ -2109,17 +2109,20 @@ export class Renderer {
       drawArrow(px(a.x, a.y), py(a.x, a.y) - hh * 0.9, px(txw, tyw), py(txw, tyw) - hh * 0.7, phase / flight);
     }
 
-    // torres de vigia atirando (alvo vem no snapshot; flecha sai do alto da torre)
-    const towerCd = TOWER_COOLDOWN * 1000;
+    // prédios de defesa atirando (torre de vigia + Centro da Cidade; alvo vem no
+    // snapshot em b.targetId; a flecha sai do alto do prédio)
     for (const b of this.gs.buildings.values()) {
-      if (b.type !== 'watch_tower' || (b.progress ?? 1) < 1 || b.targetId == null) continue;
+      const def = DEFENSE_DEFS[b.type];
+      if (!def || (b.progress ?? 1) < 1 || b.targetId == null) continue;
       const tgt = this.gs.units.get(b.targetId);
       if (!tgt) continue;
-      const phase = (now + b.id * 137) % towerCd;
+      const phase = (now + b.id * 137) % (def.cooldown * 1000);
       if (phase >= flight) continue;
       const tp = this.gs.unitPos(tgt, now);
-      const ax = px(b.tileX + 0.5, b.tileY + 0.5);
-      const ay = py(b.tileX + 0.5, b.tileY + 0.5) - hh * 3.2; // topo da torre
+      const size = BUILDING_DEFS[b.type]?.size ?? 1;
+      const ax = px(b.tileX + size / 2, b.tileY + size / 2);
+      // topo do prédio (o Centro da Cidade é bem maior que a torre)
+      const ay = py(b.tileX + size / 2, b.tileY + size / 2) - hh * (b.type === 'town_center' ? 3.6 : 3.2);
       drawArrow(ax, ay, px(tp.x, tp.y), py(tp.x, tp.y) - hh * 0.7, phase / flight);
     }
 

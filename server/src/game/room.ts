@@ -22,8 +22,9 @@ import {
   MARKET_PRICE_STEP,
   MARKET_START_PRICE,
   TICK_MS,
-  TOWER_COOLDOWN,
-  TOWER_RANGE,
+  DEFENSE_DEFS,
+  buildingRange,
+  buildingAttack,
   TRADE_LOT,
   TRAIN_QUEUE_MAX,
   UNIT_AGE_REQ,
@@ -31,7 +32,6 @@ import {
   carryCapacity,
   gatherMultiplier,
   techBonus,
-  towerAttack,
   tradeBuyCost,
   tradeSellGain,
 } from '@age/shared';
@@ -1265,20 +1265,26 @@ export class Game {
     }
   }
 
-  /** Torres de vigia: atiram flechas no inimigo mais próximo dentro do alcance.
-   *  O dano cresce com a era do dono (a torre "evolui" junto). */
+  /** Prédios de defesa (torre de vigia + Centro da Cidade): atiram flechas no
+   *  inimigo mais próximo dentro do alcance. Alcance E dano crescem com a era do
+   *  dono e com as pesquisas de defesa (Balística/Frestas). */
   private updateTowers(dt: number): void {
     for (const b of this.buildings.values()) {
-      if (b.type !== 'watch_tower' || b.progress < 1) continue;
+      const def = DEFENSE_DEFS[b.type];
+      if (!def || b.progress < 1) continue;
       b.attackTimer = (b.attackTimer ?? 0) - dt;
-      const cx = b.tileX + 0.5;
-      const cy = b.tileY + 0.5;
+      const p = this.players.get(b.owner);
+      const age = p?.age ?? 1;
+      const range = buildingRange(b.type, age, p?.techs);
+      const size = BUILDING_DEFS[b.type].size;
+      const cx = b.tileX + size / 2;
+      const cy = b.tileY + size / 2;
       // mantém o alvo atual enquanto vivo e no alcance; senão procura outro
       let target = b.targetId !== undefined ? this.units.get(b.targetId) : undefined;
-      if (!target || target.owner === b.owner || Math.hypot(target.x - cx, target.y - cy) > TOWER_RANGE) {
+      if (!target || target.owner === b.owner || Math.hypot(target.x - cx, target.y - cy) > range) {
         target = undefined;
         b.targetId = undefined;
-        let bestD = TOWER_RANGE;
+        let bestD = range;
         for (const u of this.units.values()) {
           if (u.owner === b.owner) continue;
           const d = Math.hypot(u.x - cx, u.y - cy);
@@ -1290,9 +1296,8 @@ export class Game {
         if (target) b.targetId = target.id;
       }
       if (target && b.attackTimer <= 0) {
-        b.attackTimer = TOWER_COOLDOWN;
-        const age = this.players.get(b.owner)?.age ?? 1;
-        target.hp -= Math.max(1, towerAttack(age) - this.unitArmor(target));
+        b.attackTimer = def.cooldown;
+        target.hp -= Math.max(1, buildingAttack(b.type, age, p?.techs) - this.unitArmor(target));
         if (target.hp <= 0) {
           this.units.delete(target.id);
           this.retargetAttackersOf(target.id);

@@ -105,13 +105,21 @@ export function tradeSellGain(price: number): number {
   return Math.floor(price * (1 - MARKET_FEE));
 }
 
-// ---------- Torre de vigia (combate de prédio) ----------
-export const TOWER_RANGE = 6.5;    // alcance em tiles
-export const TOWER_COOLDOWN = 1.6; // segundos entre flechas
-/** Dano da flecha da torre — cresce com a era do dono (torre "evolui"). */
-export function towerAttack(age: number): number {
-  return 6 + Math.max(0, age - 2) * 2;
+// ---------- Prédios de defesa (torre de vigia + Centro da Cidade atiram flechas) ----------
+export interface DefenseDef {
+  range: number;    // alcance base em tiles (na era mínima do prédio)
+  cooldown: number; // segundos entre flechas
+  attack: number;   // dano base por flecha
 }
+/** Prédios que atiram flechas nos inimigos próximos. Alcance e dano crescem com
+ *  a era do dono e com as pesquisas de defesa — ver buildingRange/buildingAttack. */
+export const DEFENSE_DEFS: Partial<Record<BuildingType, DefenseDef>> = {
+  watch_tower: { range: 6.5, cooldown: 1.5, attack: 5 },
+  town_center: { range: 6,   cooldown: 2.0, attack: 4 },
+};
+/** Ganho por era acima da 1ª: a cada avanço, a flecha vai mais longe e bate mais. */
+export const DEFENSE_RANGE_PER_AGE = 0.5;
+export const DEFENSE_ATTACK_PER_AGE = 1.5;
 
 export const TRAIN_QUEUE_MAX = 5;
 
@@ -181,6 +189,9 @@ export interface TechDef {
   gather?: Partial<Record<ResourceType, number>>;
   /** Bônus econômico: capacidade extra de carga do aldeão. */
   carry?: number;
+  /** Bônus de DEFESA de prédio (torre de vigia + Centro da Cidade): dano e/ou
+   *  alcance das flechas. Techs de defesa têm `units: []`. */
+  defense?: { attack?: number; range?: number };
 }
 
 const MELEE: UnitType[] = ['swordsman', 'knight'];
@@ -211,6 +222,10 @@ export const TECH_DEFS: TechDef[] = [
   { id: 'steel_axes',    name: 'Machados de Aço',   icon: '🪓', building: 'market', ageReq: 2, cost: { food: 100 },            time: 25, units: [], gather: { wood: 0.2 } },
   { id: 'iron_picks',    name: 'Picaretas de Ferro', icon: '⛏️', building: 'market', ageReq: 2, cost: { food: 100, wood: 50 }, time: 25, units: [], gather: { gold: 0.2, stone: 0.2 } },
   { id: 'wheelbarrow',   name: 'Carrinho de Mão',   icon: '🛒', building: 'market', ageReq: 3, cost: { food: 150, wood: 75 },  time: 30, units: [], carry: 5 },
+
+  // --- Centro da Cidade: defesa (torres e CC atiram mais longe / mais forte) ---
+  { id: 'ballistics', name: 'Balística', icon: '📐', building: 'town_center', ageReq: 2, cost: { wood: 150, gold: 75 },  time: 30, units: [], defense: { range: 1 } },
+  { id: 'arrowslits', name: 'Frestas',   icon: '🗼', building: 'town_center', ageReq: 3, cost: { food: 150, wood: 100 }, time: 35, prereq: 'ballistics', units: [], defense: { attack: 3 } },
 ];
 
 const TECH_BY_ID: Record<string, TechDef> = Object.fromEntries(TECH_DEFS.map((t) => [t.id, t]));
@@ -233,6 +248,36 @@ export function techBonus(
     range += t.addRange ?? 0;
   }
   return { attack, armor, hp, range };
+}
+
+/** Bônus de defesa de prédio (alcance/dano de flecha) das techs pesquisadas. */
+export function defenseBonus(techs?: Iterable<string>): { attack: number; range: number } {
+  let attack = 0;
+  let range = 0;
+  if (techs) {
+    for (const id of techs) {
+      const d = TECH_BY_ID[id]?.defense;
+      if (d) {
+        attack += d.attack ?? 0;
+        range += d.range ?? 0;
+      }
+    }
+  }
+  return { attack, range };
+}
+
+/** Alcance de tiro de um prédio de defesa: base + cresce por era + pesquisas. */
+export function buildingRange(type: BuildingType, age: number, techs?: Iterable<string>): number {
+  const def = DEFENSE_DEFS[type];
+  if (!def) return 0;
+  return def.range + Math.max(0, age - 1) * DEFENSE_RANGE_PER_AGE + defenseBonus(techs).range;
+}
+
+/** Dano por flecha de um prédio de defesa: base + cresce por era + pesquisas. */
+export function buildingAttack(type: BuildingType, age: number, techs?: Iterable<string>): number {
+  const def = DEFENSE_DEFS[type];
+  if (!def) return 0;
+  return def.attack + Math.max(0, age - 1) * DEFENSE_ATTACK_PER_AGE + defenseBonus(techs).attack;
 }
 
 /** Multiplicador de coleta de um recurso com as techs econômicas (1 = normal). */
