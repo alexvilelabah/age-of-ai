@@ -238,13 +238,16 @@ export class Lobby {
       return;
     }
     if (room.inGame && room.game) {
+      // markDefeated pode ENCERRAR a partida na hora (se sobrar 1 jogador):
+      // isso dispara onGameOver, que zera room.game. Por isso todo acesso a
+      // room.game depois daqui é reguardado.
       room.game.markDefeated(conn.id);
       // se não sobrou nenhum humano conectado, encerra e remove a sala
       const anotherHuman = [...room.members.values()].some(
         (m) => m.id !== conn.id && !m.isBot && this.conns.has(m.id),
       );
       if (!anotherHuman) {
-        room.game.stop();
+        if (room.game) room.game.stop(); // pode já ter sido encerrado por onGameOver
         this.rooms.delete(roomId);
         this.broadcastRoomListToLobbyClients();
       }
