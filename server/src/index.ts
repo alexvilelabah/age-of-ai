@@ -45,6 +45,14 @@ const CONTENT_TYPES: Record<string, string> = {
 // Serve SOMENTE arquivos de dentro de client/dist. Nada mais do PC fica acessivel.
 function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): void {
   const urlPath = decodeURIComponent((req.url ?? '/').split('?')[0]);
+
+  // Contagem ao vivo (jogadores online / salas / partidas) — usada pelo monitor.
+  if (urlPath === '/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(lobby.stats()));
+    return;
+  }
+
   let filePath = path.join(DIST, urlPath === '/' ? 'index.html' : urlPath);
 
   // Trava contra path traversal (../): o alvo TEM que ficar dentro de DIST.

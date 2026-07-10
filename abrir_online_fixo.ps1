@@ -103,8 +103,23 @@ try {
         Write-Host "O tunel demorou a responder. Abra https://$domain manualmente em alguns segundos." -ForegroundColor Yellow
     }
 
-    # Bloqueia aqui enquanto o tunel estiver rodando (fechar a janela encerra tudo).
-    Wait-Process -Id $tunnel.Id
+    # Monitor ao vivo: mostra quantos jogadores estao online, atualizando sozinho
+    # quando alguem entra ou sai. Tambem segura a janela aberta e encerra se o
+    # tunel cair (fechar a janela encerra tudo pelo bloco finally).
+    Write-Host "Monitorando jogadores (a linha atualiza quando alguem entra/sai)..." -ForegroundColor DarkGray
+    Write-Host ""
+    $lastLine = ""
+    while (-not $tunnel.HasExited) {
+        Start-Sleep -Seconds 3
+        try {
+            $s = Invoke-RestMethod -Uri "http://127.0.0.1:8080/status" -TimeoutSec 3
+            $line = "Jogadores online: $($s.players)  |  Salas: $($s.rooms)  |  Em partida: $($s.games)"
+            if ($line -ne $lastLine) {
+                $lastLine = $line
+                Write-Host ("[{0}]  {1}" -f (Get-Date -Format "HH:mm:ss"), $line) -ForegroundColor Cyan
+            }
+        } catch {}
+    }
 }
 finally {
     Write-Host ""

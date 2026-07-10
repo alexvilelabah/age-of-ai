@@ -52,6 +52,13 @@ export class Lobby {
     this.conns.delete(playerId);
   }
 
+  /** Contagem ao vivo p/ monitorar quem está online (usada no endpoint /status). */
+  stats(): { players: number; rooms: number; games: number } {
+    let games = 0;
+    for (const r of this.rooms.values()) if (r.inGame) games++;
+    return { players: this.conns.size, rooms: this.rooms.size, games };
+  }
+
   handleMessage(playerId: number, msg: ClientMessage): void {
     const conn = this.conns.get(playerId);
     if (!conn) return;
