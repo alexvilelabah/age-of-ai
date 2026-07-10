@@ -69,6 +69,14 @@ const PROFILES: readonly BotProfile[] = [
 const ROAD_RADIUS = 22;
 const BASE_APRON = 2;
 const MAX_CONCURRENT_CORE_BUILDS = 2;
+// Teto de checagens caras de conectividade (cada uma faz um flood do mapa) por
+// busca de local de PREDIO.
+const MAX_CONNECTIVITY_CHECKS = 36;
+// Muralha tem teto MENOR: perto de fechar o anel, muitos pontos falham a
+// conectividade e a busca chega ao teto — como a muralha e gradual (tenta a
+// cada tick) e as ruas ja deixam as passagens, um teto baixo evita o pico de
+// CPU sem prejudicar a defesa. Os ultimos segmentos podem so demorar mais.
+const MAX_WALL_CHECKS = 18;
 
 export function runBotAI(game: Game, botId: number): void {
   const player = game.players.get(botId);
@@ -90,7 +98,9 @@ export function runBotAI(game: Game, botId: number): void {
   const anchor = findBaseAnchor(game.grid, tc);
   const ctx: PlanContext = {
     game, botId, tc, units, villagers, buildings, nodes, base, enemyDir, anchor,
-    reachableBefore: anchor ? flood(game.grid, anchor) : null,
+    // Preguicoso: so calcula a alcancabilidade "antes" quando (e se) for validar
+    // uma obra neste tick. Em ticks sem construcao, nenhum flood roda.
+    reachableBefore: null,
   };
 
   const resources = player.resources;
@@ -473,7 +483,7 @@ function findPlannedBuildSpot(ctx: PlanContext, type: BuildingType, request: Spo
   }
 
   candidates.sort((a, b) => a.score - b.score);
-  for (const candidate of candidates.slice(0, 36)) {
+  for (const candidate of candidates.slice(0, MAX_CONNECTIVITY_CHECKS)) {
     if (safeAfterPlacement(ctx, candidate.p.x, candidate.p.y, size)) return candidate.p;
   }
   return null;
@@ -509,27 +519,39 @@ function placementScore(ctx: PlanContext, type: BuildingType, request: SpotReque
 }
 
 function safeAfterPlacement(ctx: PlanContext, tx: number, ty: number, size: number): boolean {
-  if (!ctx.anchor || !ctx.reachableBefore) return true;
-  const blocked = ctx.game.grid.blocked.slice();
+  if (!ctx.anchor) return true;
+  // Calcula a alcancabilidade "antes" uma unica vez por tick (preguicoso).
+  if (!ctx.reachableBefore) ctx.reachableBefore = flood(ctx.game.grid, ctx.anchor);
+  const grid = ctx.game.grid;
+  const blocked = grid.blocked;
+  const gridSize = grid.size;
+
+  // Carimba a pegada NO PROPRIO grid (sem clonar ~20k bytes por candidato) e
+  // guarda os tiles alterados para desfaze-los logo apos o flood.
+  const stamped: number[] = [];
   for (let y = ty; y < ty + size; y++) {
-    for (let x = tx; x < tx + size; x++) blocked[idx(x, y, ctx.game.grid.size)] = 1;
+    for (let x = tx; x < tx + size; x++) {
+      const i = idx(x, y, gridSize);
+      if (blocked[i] === 0) { blocked[i] = 1; stamped.push(i); }
+    }
   }
-  const after = flood({ ...ctx.game.grid, blocked }, ctx.anchor);
+  const after = flood(grid, ctx.anchor);
+  for (const i of stamped) blocked[i] = 0; // desfaz o carimbo antes de qualquer retorno
 
   // Nenhuma unidade que hoje pertence a cidade pode virar prisioneira da obra.
   for (const unit of ctx.units) {
     const ux = Math.floor(unit.x);
     const uy = Math.floor(unit.y);
-    if (ux < 0 || uy < 0 || ux >= ctx.game.grid.size || uy >= ctx.game.grid.size) continue;
-    const i = idx(ux, uy, ctx.game.grid.size);
+    if (ux < 0 || uy < 0 || ux >= gridSize || uy >= gridSize) continue;
+    const i = idx(ux, uy, gridSize);
     if (ctx.reachableBefore[i] && !after[i]) return false;
   }
 
   // Todo tile livre de nascimento/trabalho ao redor do novo predio precisa
   // continuar ligado a cidade; isso evita unidades nascendo em bolsos fechados.
   for (const p of rectangleRing(tx - 1, ty - 1, tx + size, ty + size)) {
-    if (!inside(ctx.game.grid, p.x, p.y)) continue;
-    const i = idx(p.x, p.y, ctx.game.grid.size);
+    if (!inside(grid, p.x, p.y)) continue;
+    const i = idx(p.x, p.y, gridSize);
     if (!blocked[i] && !after[i]) return false;
   }
   return true;
@@ -554,11 +576,16 @@ function nextWallSpot(ctx: PlanContext, radius: number): Pt | null {
     })
     .sort((a, b) => a.score - b.score);
 
+  // Limita as checagens caras de conectividade (cada uma faz um flood do mapa).
+  // Os pontos ja vem ordenados pelo melhor lado; se os primeiros nao servem,
+  // espera o proximo tick (a muralha e gradual de qualquer forma).
+  let checks = 0;
   for (const { p } of points) {
     if (!footprintFree(grid, p.x, p.y, 1)) continue; // agua/arvore/predio vira obstaculo natural
     if (overlapsUnit(ctx.units, p.x, p.y, 1)) continue;
     if (!hasOpenSides(grid, p.x, p.y, 1, 2)) continue;
     if (safeAfterPlacement(ctx, p.x, p.y, 1)) return p;
+    if (++checks >= MAX_WALL_CHECKS) break;
   }
   return null;
 }
