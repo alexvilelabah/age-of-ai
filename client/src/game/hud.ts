@@ -12,7 +12,6 @@ import type {
 } from '@age/shared';
 import {
   AGE_COSTS,
-  AGE_NAMES,
   AGE_NUMERALS,
   BUILDING_DEFS,
   buildingsToAdvance,
@@ -28,6 +27,7 @@ import {
   tradeSellGain,
 } from '@age/shared';
 import {
+  AGE_NAMES,
   BUILDING_DESCS,
   BUILDING_ICONS,
   BUILDING_NAMES,
@@ -38,6 +38,8 @@ import {
   nodeResourceIcon,
   RESOURCE_ICONS,
   RESOURCE_NAMES,
+  t,
+  techName,
   UNIT_DESCS,
   UNIT_ICONS,
   UNIT_NAMES,
@@ -98,16 +100,6 @@ const IDLE_VIL_SVG =
   '<path d="M8 7.2c-2.6 0-4.2 1.6-4.6 4.2-.1.8.4 1.6 1.3 1.6h6.6c.9 0 1.4-.8 1.3-1.6C12.2 8.8 10.6 7.2 8 7.2z" fill="#c8a05a" stroke="#8a6a3f"/>' +
   '<path d="M3.6 4.4h8.8" stroke="#8a6a3f" stroke-width="1.6" stroke-linecap="round"/></svg>';
 
-const HINTS: Record<string, string> = {
-  'hint:none': 'Selecione unidades ou prédios com o botão esquerdo.',
-  'hint:soldiers': 'Botão direito: mover ou atacar.',
-  'hint:construction': 'Em construção — clique com o botão direito usando aldeões para ajudar na obra.',
-  'hint:farm': 'Fazenda pronta — envie aldeões (botão direito) para colher comida.',
-  'hint:house': 'Este prédio não treina unidades.',
-  'hint:enemy': 'Inimigo — selecione suas unidades para atacar.',
-  'hint:node': 'Envie aldeões (botão direito) para coletar.',
-};
-
 export class Hud {
   readonly el = el('div', 'hud');
 
@@ -166,20 +158,20 @@ export class Hud {
       top.appendChild(span);
     }
     this.popEl = el('span', 'res pop');
-    this.popEl.title = 'população / limite';
+    this.popEl.title = t('hud.pop_tip');
     this.popEl.append('👥 ');
     this.popVal = el('b', '', '0/0');
     this.popEl.appendChild(this.popVal);
     top.appendChild(this.popEl);
     const ageSpan = el('span', 'res age');
-    ageSpan.title = 'era atual';
+    ageSpan.title = t('hud.age_tip');
     ageSpan.append('🏛 ');
     this.ageVal = el('b', '', AGE_NAMES[1]);
     ageSpan.appendChild(this.ageVal);
     top.appendChild(ageSpan);
     // botão de aldeão ocioso (AoE2): seleciona/centraliza o próximo parado
     this.idleBtn = el('button', 'btn idle-vil hidden');
-    this.idleBtn.title = 'Aldeão ocioso — clique (ou tecla .) seleciona e centraliza o próximo';
+    this.idleBtn.title = t('hud.idle_tip');
     const idleIco = el('span', 'res-ico');
     idleIco.innerHTML = IDLE_VIL_SVG;
     this.idleBtn.appendChild(idleIco);
@@ -225,7 +217,7 @@ export class Hud {
     this.el.appendChild(this.chatBox);
     this.chatInput = el('input', 'txt game-chat-input hidden');
     this.chatInput.maxLength = 200;
-    this.chatInput.placeholder = 'Mensagem… (Enter envia, Esc cancela)';
+    this.chatInput.placeholder = t('hud.chat_placeholder');
     this.chatInput.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Enter') {
@@ -374,11 +366,11 @@ export class Hud {
     this.selPanel.appendChild(this.titleRow(UNIT_ICONS[u.type] ?? '❔', UNIT_NAMES[u.type] ?? u.type, this.gs.colorOf(u.owner)));
     this.selPanel.appendChild(this.hpBar(u.hp, maxHp));
     if (u.owner !== this.gs.you) {
-      this.selPanel.appendChild(el('div', 'sel-line', `Jogador: ${this.gs.nameOf(u.owner)}`));
+      this.selPanel.appendChild(el('div', 'sel-line', t('hud.player', { name: this.gs.nameOf(u.owner) })));
     }
     if (u.type === 'villager' && (u.carryAmount ?? 0) > 0 && u.carryType) {
       this.selPanel.appendChild(
-        el('div', 'sel-line', `Carregando: ${Math.floor(u.carryAmount ?? 0)} ${RESOURCE_ICONS[u.carryType]}`),
+        el('div', 'sel-line', t('hud.carrying', { amt: Math.floor(u.carryAmount ?? 0), icon: RESOURCE_ICONS[u.carryType] })),
       );
     }
   }
@@ -386,12 +378,12 @@ export class Hud {
   /** Seleção múltipla: grade de retratos, cada um com sua barrinha de vida
    *  (estilo AoE2). Clicar num retrato seleciona só aquela unidade. */
   private renderMultiUnits(units: UnitSnap[]): void {
-    this.selPanel.appendChild(this.titleRow('⚑', `${units.length} unidades`));
+    this.selPanel.appendChild(this.titleRow('⚑', t('hud.units_count', { n: units.length })));
     const groups = el('div', 'sel-units');
     const MAX_TILES = 14;
     for (const u of units.slice(0, MAX_TILES)) {
-      const t = el('div', 'sel-unit');
-      t.appendChild(el('span', 'ico', UNIT_ICONS[u.type] ?? '❔'));
+      const tile = el('div', 'sel-unit');
+      tile.appendChild(el('span', 'ico', UNIT_ICONS[u.type] ?? '❔'));
       const maxHp = UNIT_DEFS[u.type]?.hp ?? u.hp;
       const frac = maxHp > 0 ? Math.max(0, Math.min(1, u.hp / maxHp)) : 0;
       const bar = el('div', 'mini-hp');
@@ -400,13 +392,13 @@ export class Hud {
       if (frac <= 0.3) fill.style.background = 'var(--red)';
       else if (frac <= 0.6) fill.style.background = '#e0b23e';
       bar.appendChild(fill);
-      t.appendChild(bar);
-      t.title = `${UNIT_NAMES[u.type] ?? u.type} — ${Math.ceil(u.hp)}/${maxHp}`;
-      t.addEventListener('click', () => {
+      tile.appendChild(bar);
+      tile.title = `${UNIT_NAMES[u.type] ?? u.type} — ${Math.ceil(u.hp)}/${maxHp}`; // formato numérico (sem tradução)
+      tile.addEventListener('click', () => {
         this.gs.selection.clear();
         this.gs.selection.add(u.id);
       });
-      groups.appendChild(t);
+      groups.appendChild(tile);
     }
     if (units.length > MAX_TILES) {
       groups.appendChild(el('div', 'sel-unit more', `+${units.length - MAX_TILES}`));
@@ -422,15 +414,15 @@ export class Hud {
     );
     this.selPanel.appendChild(this.hpBar(b.hp, maxHp));
     if (b.owner !== this.gs.you) {
-      this.selPanel.appendChild(el('div', 'sel-line', `Jogador: ${this.gs.nameOf(b.owner)}`));
+      this.selPanel.appendChild(el('div', 'sel-line', t('hud.player', { name: this.gs.nameOf(b.owner) })));
     }
     if ((b.progress ?? 1) < 1) {
       this.selPanel.appendChild(
-        el('div', 'sel-line', `Construção: ${Math.floor((b.progress ?? 0) * 100)}%`),
+        el('div', 'sel-line', t('hud.construction_pct', { pct: Math.floor((b.progress ?? 0) * 100) })),
       );
     } else if (b.type === 'farm' && b.foodLeft !== undefined) {
       this.selPanel.appendChild(
-        el('div', 'sel-line', `Comida restante: ${Math.ceil(b.foodLeft)} ${RESOURCE_ICONS.food}`),
+        el('div', 'sel-line', t('hud.food_left', { amt: Math.ceil(b.foodLeft), icon: RESOURCE_ICONS.food })),
       );
     }
   }
@@ -440,7 +432,7 @@ export class Hud {
     const def = NODE_DEFS[n.type];
     const total = def?.amount ?? n.amount;
     this.selPanel.appendChild(
-      el('div', 'sel-line', `Restante: ${Math.ceil(n.amount)} / ${total} ${nodeResourceIcon(n.type)}`),
+      el('div', 'sel-line', t('hud.remaining', { amt: Math.ceil(n.amount), total, icon: nodeResourceIcon(n.type) })),
     );
   }
 
@@ -506,7 +498,7 @@ export class Hud {
     this.trainBuildingId = -1;
 
     if (ctx.key === 'build') {
-      this.actPanel.appendChild(el('div', 'act-title', 'Construir'));
+      this.actPanel.appendChild(el('div', 'act-title', t('hud.build')));
       const grid = el('div', 'cmd-grid');
       for (const type of BUILD_ORDER) {
         const def = BUILDING_DEFS[type];
@@ -515,7 +507,7 @@ export class Hud {
         // pra caixa de ajuda acima do menu (data-tip-*)
         const btn = el('button', 'btn cmd-tile');
         btn.appendChild(el('span', 'ico', BUILDING_ICONS[type]));
-        btn.dataset.tipTitle = `${BUILDING_NAMES[type]} — ${costLongText(def.cost)} • ${def.buildTime}s`;
+        btn.dataset.tipTitle = t('hud.building_cost', { building: BUILDING_NAMES[type], cost: costLongText(def.cost), time: def.buildTime });
         btn.dataset.tipDesc = BUILDING_DESCS[type] ?? '';
         btn.addEventListener('click', () => {
           if (!btn.classList.contains('off')) this.deps.onBuild(type);
@@ -533,7 +525,7 @@ export class Hud {
       const trains = def?.trains ?? [];
       const techs = TECH_DEFS.filter((t) => t.building === b.type);
       this.trainBuildingId = b.id;
-      const verb = trains.length ? 'Treinar' : 'Pesquisar';
+      const verb = trains.length ? t('hud.train') : t('hud.research_verb');
       this.actPanel.appendChild(el('div', 'act-title', `${verb} — ${BUILDING_NAMES[b.type] ?? b.type}`));
       const grid = el('div', 'cmd-grid');
       for (const unit of trains) {
@@ -542,8 +534,8 @@ export class Hud {
         // tile quadrado só com o ícone; nome/custo/descrição na caixa de ajuda
         const btn = el('button', 'btn cmd-tile');
         btn.appendChild(el('span', 'ico', UNIT_ICONS[unit]));
-        btn.dataset.tipTitle = `${UNIT_NAMES[unit]} — ${costLongText(udef.cost)} • ${udef.trainTime}s`;
-        btn.dataset.tipDesc = `${UNIT_DESCS[unit] ?? ''} (Shift+clique: treina 5)`;
+        btn.dataset.tipTitle = t('hud.unit_cost', { unit: UNIT_NAMES[unit], cost: costLongText(udef.cost), time: udef.trainTime });
+        btn.dataset.tipDesc = `${UNIT_DESCS[unit] ?? ''} ${t('hud.shift_train5')}`;
         // Shift+clique: enfileira 5 de uma vez (AoE2)
         btn.addEventListener('click', (e) => {
           if (btn.classList.contains('off')) return;
@@ -557,7 +549,7 @@ export class Hud {
       for (const tech of techs) {
         const btn = el('button', 'btn cmd-tile');
         btn.appendChild(el('span', 'ico', tech.icon));
-        btn.dataset.tipTitle = `${tech.name} — ${costLongText(tech.cost)} • ${tech.time}s`;
+        btn.dataset.tipTitle = t('hud.tech_cost', { tech: techName(tech.id), cost: costLongText(tech.cost), time: tech.time });
         btn.dataset.tipDesc = this.techEffectText(tech);
         btn.addEventListener('click', () => {
           if (!btn.classList.contains('off')) this.deps.onResearch(b.id, tech.id);
@@ -568,20 +560,20 @@ export class Hud {
       this.actPanel.appendChild(grid);
       // Mercado: comprar/vender recursos por ouro (preços movem com as trocas)
       if (b.type === 'market') {
-        this.actPanel.appendChild(el('div', 'act-title trade-title', 'Comércio (lotes de 100)'));
+        this.actPanel.appendChild(el('div', 'act-title trade-title', t('hud.trade_title')));
         const box = el('div', 'trade-box');
         for (const res of ['food', 'wood', 'stone'] as const) {
           const row = el('div', 'trade-row');
           row.appendChild(resIconEl(res));
           const sell = el('button', 'btn trade-btn');
-          sell.dataset.tipTitle = `Vender 100 de ${RESOURCE_NAMES[res]}`;
-          sell.dataset.tipDesc = 'Recebe ouro pelo lote. Vender barateia o preço deste recurso para todos.';
+          sell.dataset.tipTitle = t('hud.sell_100', { res: RESOURCE_NAMES[res] });
+          sell.dataset.tipDesc = t('hud.sell_desc');
           sell.addEventListener('click', () => {
             if (!sell.classList.contains('off')) this.deps.onTrade('sell', res);
           });
           const buy = el('button', 'btn trade-btn');
-          buy.dataset.tipTitle = `Comprar 100 de ${RESOURCE_NAMES[res]}`;
-          buy.dataset.tipDesc = 'Paga ouro pelo lote. Comprar encarece o preço deste recurso para todos.';
+          buy.dataset.tipTitle = t('hud.buy_100', { res: RESOURCE_NAMES[res] });
+          buy.dataset.tipDesc = t('hud.buy_desc');
           buy.addEventListener('click', () => {
             if (!buy.classList.contains('off')) this.deps.onTrade('buy', res);
           });
@@ -596,17 +588,17 @@ export class Hud {
       // Centro da Cidade: botão de avançar de era (estilo AoE2)
       if (b.type === 'town_center') {
         const btn = el('button', 'btn cmd-btn age-btn');
-        btn.dataset.tipTitle = 'Avançar de era';
-        btn.dataset.tipDesc = 'Desbloqueia novos prédios, unidades e melhorias — e seus edifícios ficam mais imponentes.';
+        btn.dataset.tipTitle = t('hud.advance_age');
+        btn.dataset.tipDesc = t('hud.advance_age_desc');
         btn.addEventListener('click', () => this.deps.onAdvanceAge());
         this.ageBtn = btn;
         this.actPanel.appendChild(btn);
       }
       // centro da barra: produção/pesquisa
-      this.prodPanel.appendChild(el('div', 'act-title', trains.length ? 'Produção' : 'Pesquisa'));
+      this.prodPanel.appendChild(el('div', 'act-title', trains.length ? t('hud.production') : t('hud.research_head')));
       if (trains.length) {
         const now = el('div', 'prod-now');
-        this.prodTxt = el('span', 'prod-txt', 'Ocioso');
+        this.prodTxt = el('span', 'prod-txt', t('hud.idle'));
         now.appendChild(this.prodTxt);
         const barWrap = el('div', 'prod-bar');
         this.prodFill = el('div', 'prod-fill');
@@ -641,8 +633,9 @@ export class Hud {
       return;
     }
 
-    this.actPanel.appendChild(el('div', 'act-title', 'Ações'));
-    this.actPanel.appendChild(el('div', 'hint', HINTS[ctx.key] ?? HINTS['hint:none']));
+    this.actPanel.appendChild(el('div', 'act-title', t('hud.actions')));
+    const hintKey = ctx.key.startsWith('hint:') ? ctx.key.replace(':', '.') : 'hint.none';
+    this.actPanel.appendChild(el('div', 'hint', t(hintKey)));
   }
 
   private refreshActions(ctx: { key: string; building?: BuildingSnap }): void {
@@ -664,7 +657,7 @@ export class Hud {
         btn.classList.remove('locked');
         btn.classList.toggle('off', !this.canAfford(def.cost));
         btn.classList.toggle('active', placement === type);
-        btn.dataset.tipTitle = `${BUILDING_NAMES[type]} — ${costLongText(def.cost)} • ${def.buildTime}s`;
+        btn.dataset.tipTitle = t('hud.building_cost', { building: BUILDING_NAMES[type], cost: costLongText(def.cost), time: def.buildTime });
       }
       return;
     }
@@ -683,17 +676,17 @@ export class Hud {
         btn.classList.toggle('locked', locked);
         if (udef) {
           btn.dataset.tipTitle = locked
-            ? `${UNIT_NAMES[unit]} — 🔒 requer ${AGE_NAMES[req]}`
-            : `${UNIT_NAMES[unit]} — ${costLongText(udef.cost)} • ${udef.trainTime}s`;
+            ? t('hud.unit_age_locked', { unit: UNIT_NAMES[unit], age: AGE_NAMES[req] })
+            : t('hud.unit_cost', { unit: UNIT_NAMES[unit], cost: costLongText(udef.cost), time: udef.trainTime });
         }
       }
       // botão de avançar de era (só existe no Centro da Cidade)
       if (this.ageBtn && me) {
         if (myAge >= MAX_AGE) {
-          this.ageBtn.textContent = `🏛 ${AGE_NAMES[MAX_AGE]} (máxima)`;
+          this.ageBtn.textContent = t('hud.age_max', { age: AGE_NAMES[MAX_AGE] });
           this.ageBtn.disabled = true;
         } else if (me.ageProgress !== undefined) {
-          this.ageBtn.textContent = `⏳ Pesquisando ${AGE_NAMES[myAge + 1]}…`;
+          this.ageBtn.textContent = t('hud.age_researching', { age: AGE_NAMES[myAge + 1] });
           this.ageBtn.disabled = true;
         } else {
           const cost = AGE_COSTS[myAge + 1] ?? {};
@@ -704,11 +697,11 @@ export class Hud {
             if (b.owner === this.gs.you && b.progress >= 1 && countsForAgeUp(b.type, myAge)) have.add(b.type);
           }
           if (have.size < needB) {
-            const req = needB > 1 ? `${needB} prédios diferentes` : `1 prédio`;
-            this.ageBtn.textContent = `⬆ ${AGE_NAMES[myAge + 1]} — requer ${req} da era (${have.size}/${needB})`;
+            const req = needB > 1 ? t('hud.buildings_diff', { n: needB }) : t('hud.one_building');
+            this.ageBtn.textContent = t('hud.age_need', { age: AGE_NAMES[myAge + 1], req, have: have.size, need: needB });
             this.ageBtn.disabled = true;
           } else {
-            this.ageBtn.textContent = `⬆ Avançar: ${AGE_NAMES[myAge + 1]} — ${costText(cost)}`;
+            this.ageBtn.textContent = t('hud.age_advance', { age: AGE_NAMES[myAge + 1], cost: costText(cost) });
             this.ageBtn.disabled = !this.canAfford(cost);
           }
         }
@@ -718,7 +711,7 @@ export class Hud {
         if (me.ageProgress !== undefined) {
           const pct = Math.round(me.ageProgress * 100);
           this.prodAgeRow.classList.remove('hidden');
-          this.prodAgeTxt.textContent = `Pesquisando: ${AGE_NAMES[myAge + 1]} — ${pct}%`;
+          this.prodAgeTxt.textContent = t('hud.researching_age', { age: AGE_NAMES[myAge + 1], pct });
           this.prodAgeFill.style.width = `${pct}%`;
         } else {
           this.prodAgeRow.classList.add('hidden');
@@ -737,12 +730,12 @@ export class Hud {
         btn.classList.toggle('researched', done);
         btn.classList.toggle('locked', !done && (ageLocked || prereqMissing));
         btn.dataset.tipTitle = done
-          ? `${tech.name} — ✓ já pesquisado`
+          ? t('hud.tech_done', { tech: techName(tech.id) })
           : ageLocked
-            ? `${tech.name} — 🔒 requer ${AGE_NAMES[tech.ageReq]}`
+            ? t('hud.tech_age_locked', { tech: techName(tech.id), age: AGE_NAMES[tech.ageReq] })
             : prereqMissing
-              ? `${tech.name} — 🔒 requer: ${TECH_DEFS.find((t) => t.id === tech.prereq)?.name ?? ''}`
-              : `${tech.name} — ${costLongText(tech.cost)} • ${tech.time}s`;
+              ? t('hud.tech_prereq', { tech: techName(tech.id), prereq: techName(tech.prereq ?? '') })
+              : t('hud.tech_cost', { tech: techName(tech.id), cost: costLongText(tech.cost), time: tech.time });
       }
       // botões de comércio do Mercado: preço ao vivo + disponibilidade
       if (this.tradeBtns.size > 0 && me?.resources) {
@@ -752,13 +745,13 @@ export class Hud {
           const buy = this.tradeBtns.get(`buy:${res}`);
           if (sell) {
             const gain = tradeSellGain(price);
-            const txt = `Vender +${gain}`;
+            const txt = t('hud.sell', { gain });
             if (sell.textContent !== txt) sell.textContent = txt;
             sell.classList.toggle('off', (me.resources[res] ?? 0) < TRADE_LOT);
           }
           if (buy) {
             const cost = tradeBuyCost(price);
-            const txt = `Comprar −${cost}`;
+            const txt = t('hud.buy', { cost });
             if (buy.textContent !== txt) buy.textContent = txt;
             buy.classList.toggle('off', (me.resources.gold ?? 0) < cost);
           }
@@ -767,10 +760,10 @@ export class Hud {
       // linha central: pesquisa de tecnologia deste prédio
       if (this.prodResRow && this.prodResTxt && this.prodResFill) {
         if (b.research) {
-          const tech = TECH_DEFS.find((t) => t.id === b.research!.id);
+          const tech = TECH_DEFS.find((td) => td.id === b.research!.id);
           const pct = Math.round((b.research.progress ?? 0) * 100);
           this.prodResRow.classList.remove('hidden');
-          this.prodResTxt.textContent = `Pesquisando: ${tech?.name ?? ''} — ${pct}%`;
+          this.prodResTxt.textContent = t('hud.researching_tech', { tech: tech ? techName(tech.id) : '', pct });
           this.prodResFill.style.width = `${pct}%`;
         } else {
           this.prodResRow.classList.add('hidden');
@@ -783,7 +776,7 @@ export class Hud {
         this.headFill = null;
         queue.forEach((item, index) => {
           const q = el('div', 'queue-item', UNIT_ICONS[item.unit] ?? '❔');
-          q.title = `${UNIT_NAMES[item.unit] ?? item.unit} — clique para cancelar`;
+          q.title = t('hud.queue_cancel', { unit: UNIT_NAMES[item.unit] ?? item.unit });
           q.addEventListener('click', () => this.deps.onCancelTrain(this.trainBuildingId, index));
           if (index === 0) {
             const fill = el('div', 'qfill');
@@ -800,10 +793,10 @@ export class Hud {
       if (this.prodTxt && this.prodFill) {
         if (head) {
           const pct = Math.round(Math.max(0, Math.min(1, head.progress)) * 100);
-          this.prodTxt.textContent = `Criando: ${UNIT_NAMES[head.unit] ?? head.unit} — ${pct}%`;
+          this.prodTxt.textContent = t('hud.creating', { unit: UNIT_NAMES[head.unit] ?? head.unit, pct });
           this.prodFill.style.width = `${pct}%`;
         } else {
-          this.prodTxt.textContent = 'Ocioso';
+          this.prodTxt.textContent = t('hud.idle');
           this.prodFill.style.width = '0%';
         }
       }
@@ -811,21 +804,21 @@ export class Hud {
   }
 
   /** Descrição curta do efeito de um upgrade, para o tooltip. */
-  private techEffectText(t: TechDef): string {
+  private techEffectText(tech: TechDef): string {
     const parts: string[] = [];
-    if (t.addAttack) parts.push(`+${t.addAttack} ataque`);
-    if (t.addArmor) parts.push(`+${t.addArmor} blindagem`);
-    if (t.addHp) parts.push(`+${t.addHp} vida`);
-    if (t.addRange) parts.push(`+${t.addRange} alcance`);
+    if (tech.addAttack) parts.push(t('hud.eff_attack', { n: tech.addAttack }));
+    if (tech.addArmor) parts.push(t('hud.eff_armor', { n: tech.addArmor }));
+    if (tech.addHp) parts.push(t('hud.eff_hp', { n: tech.addHp }));
+    if (tech.addRange) parts.push(t('hud.eff_range', { n: tech.addRange }));
     // techs econômicas (Mercado)
-    if (t.gather) {
-      for (const [res, frac] of Object.entries(t.gather)) {
-        parts.push(`+${Math.round((frac ?? 0) * 100)}% coleta de ${RESOURCE_NAMES[res as ResourceType]}`);
+    if (tech.gather) {
+      for (const [res, frac] of Object.entries(tech.gather)) {
+        parts.push(t('hud.eff_gather', { pct: Math.round((frac ?? 0) * 100), res: RESOURCE_NAMES[res as ResourceType] }));
       }
     }
-    if (t.carry) parts.push(`+${t.carry} de carga por viagem`);
-    const who = t.units.length ? ` (${t.units.map((u) => UNIT_NAMES[u]).join(', ')})` : '';
-    return `${parts.join(', ')}${who} • ${costLongText(t.cost)} • ${t.time}s`;
+    if (tech.carry) parts.push(t('hud.eff_carry', { n: tech.carry }));
+    const who = tech.units.length ? ` (${tech.units.map((u) => UNIT_NAMES[u]).join(', ')})` : '';
+    return `${parts.join(', ')}${who} • ${costLongText(tech.cost)} • ${tech.time}s`;
   }
 
   private canAfford(cost: Partial<Record<ResourceType, number>>): boolean {

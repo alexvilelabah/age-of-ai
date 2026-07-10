@@ -4,6 +4,7 @@
 import type { GameMode, RoomPlayer } from '@age/shared';
 import { MAX_PLAYERS_PER_ROOM, MIN_PLAYERS_TO_START } from '@age/shared';
 import { el } from '../ui';
+import { t } from '../i18n';
 
 export interface RoomScreenDeps {
   onToggleReady: () => void;
@@ -35,7 +36,7 @@ export class RoomScreen {
     this.el = el('div', 'screen');
 
     const card = el('div', 'panel card wide');
-    this.roomTitle = el('h2', '', 'Sala');
+    this.roomTitle = el('h2', '', t('room.title'));
     card.appendChild(this.roomTitle);
 
     this.rowsEl = el('div', 'player-rows');
@@ -43,10 +44,10 @@ export class RoomScreen {
 
     // Modo de jogo (só o host muda): Normal x Batalha/Rápido.
     const modeRow = el('div', 'row mode-row');
-    modeRow.appendChild(el('span', 'mode-label', 'Modo:'));
+    modeRow.appendChild(el('span', 'mode-label', t('room.mode')));
     const modeOpts: { m: GameMode; label: string; title: string }[] = [
-      { m: 'normal', label: 'Normal', title: 'Começa do zero e desenvolve a economia (padrão).' },
-      { m: 'batalha', label: 'Batalha (rápido)', title: 'Começa cheio de recursos e já na Idade dos Castelos — direto pro combate.' },
+      { m: 'normal', label: t('room.mode_normal'), title: t('room.mode_normal_desc') },
+      { m: 'batalha', label: t('room.mode_battle'), title: t('room.mode_battle_desc') },
     ];
     for (const o of modeOpts) {
       const btn = el('button', 'btn mode-btn', o.label);
@@ -58,17 +59,17 @@ export class RoomScreen {
     card.appendChild(modeRow);
 
     const actions = el('div', 'row');
-    this.readyBtn = el('button', 'btn primary', 'Pronto');
+    this.readyBtn = el('button', 'btn primary', t('room.ready'));
     this.readyBtn.addEventListener('click', () => this.deps.onToggleReady());
-    this.startBtn = el('button', 'btn primary', 'Iniciar partida');
+    this.startBtn = el('button', 'btn primary', t('room.start'));
     this.startBtn.disabled = true;
     this.startBtn.addEventListener('click', () => this.deps.onStartGame());
-    this.addBotBtn = el('button', 'btn', '+ Bot');
-    this.addBotBtn.title = 'Adicionar um oponente de IA (jogue sozinho)';
+    this.addBotBtn = el('button', 'btn', t('room.add_bot'));
+    this.addBotBtn.title = t('room.add_bot_desc');
     this.addBotBtn.addEventListener('click', () => this.deps.onAddBot());
-    this.removeBotBtn = el('button', 'btn', '− Bot');
+    this.removeBotBtn = el('button', 'btn', t('room.remove_bot'));
     this.removeBotBtn.addEventListener('click', () => this.deps.onRemoveBot());
-    const leaveBtn = el('button', 'btn danger', 'Sair da sala');
+    const leaveBtn = el('button', 'btn danger', t('room.leave'));
     leaveBtn.addEventListener('click', () => this.deps.onLeaveRoom());
     actions.appendChild(this.readyBtn);
     actions.appendChild(this.addBotBtn);
@@ -78,11 +79,11 @@ export class RoomScreen {
     card.appendChild(actions);
 
     const chatPanel = el('div', 'chat-panel');
-    chatPanel.appendChild(el('h2', '', 'Chat'));
+    chatPanel.appendChild(el('h2', '', t('room.chat')));
     this.chatLog = el('div', 'chat-log');
     chatPanel.appendChild(this.chatLog);
     this.chatInput = el('input', 'txt');
-    this.chatInput.placeholder = 'Escreva uma mensagem… (Enter envia)';
+    this.chatInput.placeholder = t('room.chat_placeholder');
     this.chatInput.maxLength = 200;
     this.chatInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -109,7 +110,7 @@ export class RoomScreen {
     this.myId = myId;
     this.mode = mode;
     const host = this.players.find((p) => p.isHost);
-    this.roomTitle.textContent = host ? `Sala de ${host.name}` : `Sala ${roomId}`;
+    this.roomTitle.textContent = host ? t('lobby.room_of', { host: host.name }) : t('room.room_n', { id: roomId });
     this.renderRows();
 
     const me = this.players.find((p) => p.id === myId);
@@ -120,7 +121,7 @@ export class RoomScreen {
       btn.classList.toggle('primary', m === this.mode);
       btn.disabled = !isHost;
     }
-    this.readyBtn.textContent = me?.ready ? 'Não estou pronto' : 'Pronto';
+    this.readyBtn.textContent = me?.ready ? t('room.not_ready') : t('room.ready');
     this.readyBtn.classList.toggle('hidden', isHost);
 
     const nonHostReady = this.players.filter((p) => !p.isHost).every((p) => p.ready);
@@ -147,10 +148,10 @@ export class RoomScreen {
       const swatch = el('span', 'swatch');
       swatch.style.background = p.color;
       row.appendChild(swatch);
-      row.appendChild(el('span', 'pname', p.name + (p.id === this.myId ? ' (você)' : '')));
+      row.appendChild(el('span', 'pname', p.name + (p.id === this.myId ? t('common.you_suffix') : '')));
       if (p.isBot) row.appendChild(el('span', '', '🤖'));
       if (p.isHost) row.appendChild(el('span', '', '👑'));
-      const tag = el('span', `ready-tag ${p.ready ? 'yes' : 'no'}`, p.ready ? 'Pronto' : 'Aguardando');
+      const tag = el('span', `ready-tag ${p.ready ? 'yes' : 'no'}`, p.ready ? t('room.tag_ready') : t('room.tag_waiting'));
       row.appendChild(tag);
       this.rowsEl.appendChild(row);
     }

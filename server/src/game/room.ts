@@ -3,7 +3,6 @@
 
 import {
   AGE_COSTS,
-  AGE_NAMES,
   AGE_RESEARCH_TIME,
   BUILDING_DEFS,
   buildingsToAdvance,
@@ -165,8 +164,8 @@ export class Game {
     }
   }
 
-  private errorTo(playerId: number, message: string): void {
-    this.send(playerId, { type: 'error', message });
+  private errorTo(playerId: number, code: string, params?: Record<string, string | number>): void {
+    this.send(playerId, { type: 'error', code, params });
   }
 
   // ---------------- Tick ----------------
@@ -384,14 +383,14 @@ export class Game {
       (b) => b.owner === playerId && b.type === 'market' && b.progress >= 1,
     );
     if (!hasMarket) {
-      this.errorTo(playerId, 'Você precisa de um Mercado pronto para negociar.');
+      this.errorTo(playerId, 'err.need_market');
       return;
     }
     const price = this.marketPrices[resource];
     if (action === 'buy') {
       const cost = tradeBuyCost(price);
       if (p.resources.gold < cost) {
-        this.errorTo(playerId, 'Ouro insuficiente.');
+        this.errorTo(playerId, 'err.no_gold');
         return;
       }
       p.resources.gold -= cost;
@@ -399,7 +398,7 @@ export class Game {
       this.marketPrices[resource] = Math.min(MARKET_PRICE_MAX, price + MARKET_PRICE_STEP);
     } else {
       if (p.resources[resource] < TRADE_LOT) {
-        this.errorTo(playerId, 'Recurso insuficiente para vender.');
+        this.errorTo(playerId, 'err.no_resource_sell');
         return;
       }
       p.resources[resource] -= TRADE_LOT;
@@ -416,19 +415,19 @@ export class Game {
     if (!tech || tech.building !== b.type) return;
     if (p.techs.has(techId)) return;
     if (b.research) {
-      this.errorTo(playerId, 'Este prédio já está pesquisando.');
+      this.errorTo(playerId, 'err.building_researching');
       return;
     }
     if (p.age < tech.ageReq) {
-      this.errorTo(playerId, `Requer ${AGE_NAMES[tech.ageReq]}.`);
+      this.errorTo(playerId, 'err.requires_age', { age: tech.ageReq });
       return;
     }
     if (tech.prereq && !p.techs.has(tech.prereq)) {
-      this.errorTo(playerId, 'Requer o upgrade anterior.');
+      this.errorTo(playerId, 'err.requires_prev_upgrade');
       return;
     }
     if (!this.canAfford(p, tech.cost)) {
-      this.errorTo(playerId, 'Recursos insuficientes.');
+      this.errorTo(playerId, 'err.no_resources');
       return;
     }
     this.deduct(p, tech.cost);
@@ -452,7 +451,7 @@ export class Game {
     const p = this.players.get(playerId);
     if (!p || p.defeated) return;
     if (p.ageResearch) {
-      this.errorTo(playerId, 'Já há uma era em pesquisa.');
+      this.errorTo(playerId, 'err.age_researching');
       return;
     }
     if (p.age >= MAX_AGE) return;
@@ -461,7 +460,7 @@ export class Game {
       if (b.owner === playerId && b.type === 'town_center' && b.progress >= 1) { hasTC = true; break; }
     }
     if (!hasTC) {
-      this.errorTo(playerId, 'Requer um Centro da Cidade concluído.');
+      this.errorTo(playerId, 'err.requires_tc');
       return;
     }
     // regra do AoE2: 2 prédios DIFERENTES da era atual concluídos
@@ -473,13 +472,13 @@ export class Game {
         if (b.owner === playerId && b.progress >= 1 && countsForAgeUp(b.type, p.age)) have.add(b.type);
       }
       if (have.size < needB) {
-        this.errorTo(playerId, `Requer ${needB} prédio(s) diferente(s) da ${AGE_NAMES[p.age]} — casa/fazenda/muralha não contam (tem ${have.size}).`);
+        this.errorTo(playerId, 'err.requires_buildings', { n: needB, age: p.age, have: have.size });
         return;
       }
     }
     const cost = AGE_COSTS[p.age + 1] ?? {};
     if (!this.canAfford(p, cost)) {
-      this.errorTo(playerId, 'Recursos insuficientes.');
+      this.errorTo(playerId, 'err.no_resources');
       return;
     }
     this.deduct(p, cost);
@@ -623,7 +622,7 @@ export class Game {
     } else if (farm && farm.type === 'farm' && farm.owner === playerId && farm.progress >= 1) {
       for (const u of units) this.startGatherFarm(u, farm);
     } else {
-      this.errorTo(playerId, 'Alvo de coleta inválido.');
+      this.errorTo(playerId, 'err.bad_gather_target');
     }
   }
 
@@ -694,11 +693,11 @@ export class Game {
     const p = this.players.get(playerId)!;
     const def = Object.prototype.hasOwnProperty.call(BUILDING_DEFS, type) ? BUILDING_DEFS[type] : undefined;
     if (!def) {
-      this.errorTo(playerId, 'Tipo de construção inválido.');
+      this.errorTo(playerId, 'err.bad_building_type');
       return;
     }
     if (p.age < def.ageReq) {
-      this.errorTo(playerId, `Requer ${AGE_NAMES[def.ageReq]}.`);
+      this.errorTo(playerId, 'err.requires_age', { age: def.ageReq });
       return;
     }
     // pré-requisito de prédio (árvore do AoE2): Fazenda/Mercado ← Moinho; etc.
@@ -708,8 +707,7 @@ export class Game {
         if (b.owner === playerId && b.type === def.requires && b.progress >= 1) { hasReq = true; break; }
       }
       if (!hasReq) {
-        const reqName: Partial<Record<BuildingType, string>> = { mill: 'um Moinho', barracks: 'um Quartel' };
-        this.errorTo(playerId, `Requer ${reqName[def.requires] ?? def.requires} concluído.`);
+        this.errorTo(playerId, 'err.requires_building', { building: def.requires });
         return;
       }
     }
@@ -736,11 +734,11 @@ export class Game {
     }
 
     if (!this.validFootprint(tileX, tileY, def.size)) {
-      this.errorTo(playerId, 'Local de construção inválido.');
+      this.errorTo(playerId, 'err.bad_build_location');
       return;
     }
     if (!this.canAfford(p, def.cost)) {
-      this.errorTo(playerId, 'Recursos insuficientes.');
+      this.errorTo(playerId, 'err.no_resources');
       return;
     }
     this.deduct(p, def.cost);
@@ -821,18 +819,18 @@ export class Game {
     const def = BUILDING_DEFS[b.type];
     if (!def.trains.includes(unit)) return;
     if (b.queue.length >= TRAIN_QUEUE_MAX) {
-      this.errorTo(playerId, 'Fila de produção cheia.');
+      this.errorTo(playerId, 'err.queue_full');
       return;
     }
     const p = this.players.get(playerId)!;
     const req = UNIT_AGE_REQ[unit] ?? 1;
     if (p.age < req) {
-      this.errorTo(playerId, `Requer ${AGE_NAMES[req]}.`);
+      this.errorTo(playerId, 'err.requires_age', { age: req });
       return;
     }
     const cost = UNIT_DEFS[unit].cost;
     if (!this.canAfford(p, cost)) {
-      this.errorTo(playerId, 'Recursos insuficientes.');
+      this.errorTo(playerId, 'err.no_resources');
       return;
     }
     this.deduct(p, cost);

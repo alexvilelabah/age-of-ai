@@ -1,53 +1,53 @@
-# Sons do jogo (Age of AI)
+# Game sounds (Age of AI)
 
-Coloque aqui os arquivos de som (**.mp3**, ogg ou wav). Cada arquivo com o nome
-exato abaixo será tocado no momento certo. Se um arquivo não existir, o jogo usa
-um som sintetizado de reserva — então pode ir adicionando **um a um**.
+Drop your sound files here (**.mp3**, ogg, or wav). Each file with the exact name
+below is played at the right moment. If a file doesn't exist, the game falls back
+to a synthesized sound — so you can add them **one at a time**.
 
-⚠️ Use sons **livres** (CC0 / freesound.org / gerados por IA que você criou).
-**Nunca** arquivos extraídos do AoE2 ou de jogos comerciais (direito autoral).
+⚠️ Use **free** sounds (CC0 / freesound.org / AI-generated ones you created).
+**Never** files extracted from AoE2 or commercial games (copyright).
 
-Dica: sons curtos (0,3–2s), já "no ponto" (sem silêncio longo no começo/fim).
+Tip: short sounds (0.3–2s), already "trimmed" (no long silence at the start/end).
 
-## Lista de arquivos (nome exato → o que é)
+## File list (exact name → what it is)
 
-### Seleção (clicar no objeto)
-- `select_villager.mp3` — aldeão (voz/"sim senhor" curto)
-- `select_swordsman.mp3` — espadachim (tinido de metal / grunhido)
-- `select_archer.mp3` — arqueiro
-- `select_knight.mp3` — **cavalo relinchando**
-- `select_building.mp3` — prédio (baque)
-- `select_resource.mp3` — árvore/mina (toque)
+### Selection (clicking an object)
+- `select_villager.mp3` — villager (short voice / "yes sir")
+- `select_swordsman.mp3` — swordsman (metal clink / grunt)
+- `select_archer.mp3` — archer
+- `select_knight.mp3` — **horse neighing**
+- `select_building.mp3` — building (thud)
+- `select_resource.mp3` — tree/mine (chime)
 
-### Comandos (botão direito)
-- `move.mp3` — mover ("sim"/passo)
-- `attack.mp3` — atacar (grito/investida)
-- `gather.mp3` — coletar
-- `build.mp3` — mandar construir (martelo)
-- `place.mp3` — assentar o prédio
+### Commands (right click)
+- `move.mp3` — move ("yes"/footstep)
+- `attack.mp3` — attack (shout/charge)
+- `gather.mp3` — gather
+- `build.mp3` — order construction (hammer)
+- `place.mp3` — place the building
 
-### Eventos
-- `ui.mp3` — clique de botão da interface
-- `trained.mp3` — unidade pronta (sino)
-- `ageup.mp3` — avançar de era (fanfarra)
-- `research.mp3` — upgrade pesquisado (ding)
-- `death.mp3` — unidade morre
-- `wreck.mp3` — prédio desabando
-- `hit.mp3` — **choque de espada** (golpe de combate)
+### Events
+- `ui.mp3` — UI button click
+- `trained.mp3` — unit ready (bell)
+- `ageup.mp3` — advance an age (fanfare)
+- `research.mp3` — upgrade researched (ding)
+- `death.mp3` — unit dies
+- `wreck.mp3` — building collapsing
+- `hit.mp3` — **sword clash** (combat hit)
 
-### Ambiente
-- `owl.mp3` — **pio da coruja** (toca ~1x/min, quando ela cruza o céu)
+### Ambient
+- `owl.mp3` — **owl hoot** (plays ~once/min, when it crosses the sky)
 
-### Música
-- `music.mp3` — **trilha de fundo** (toca em loop). Se você **não** colocar
-  este arquivo, o jogo gera uma trilha calma sintetizada. Coloque uma faixa
-  tranquila no estilo do jogo que ela entra no lugar automaticamente.
+### Music
+- `music.mp3` — **background track** (loops). If you **don't** add this
+  file, the game generates a calm synthesized track. Drop in a mellow track
+  in the game's style and it takes over automatically.
 
-## Como testar
-1. Baixe/gere o som, renomeie exatamente como acima, salve nesta pasta.
-2. Recarregue o jogo (a página).
-3. Faça a ação (ex.: selecionar o cavaleiro) e escute.
-4. Tecla **M** liga/desliga todo o som; tecla **N** liga/desliga só a música.
+## How to test
+1. Download/generate the sound, rename it exactly as above, save it in this folder.
+2. Reload the game (the page).
+3. Perform the action (e.g. select the knight) and listen.
+4. The **M** key toggles all sound; the **N** key toggles only the music.
 
-Enquanto um arquivo não existir, você verá um `404` no console para ele — é
-**normal** (só indica "ainda não adicionado"), não é erro de verdade.
+While a file doesn't exist, you'll see a `404` in the console for it — that's
+**normal** (it just means "not added yet"), not a real error.

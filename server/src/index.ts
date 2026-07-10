@@ -111,11 +111,11 @@ wss.on('connection', (ws: WebSocket) => {
     try {
       parsed = JSON.parse(data.toString());
     } catch {
-      safeSend(ws, { type: 'error', message: 'Mensagem inválida (JSON malformado).' });
+      safeSend(ws, { type: 'error', code: 'err.bad_json' });
       return;
     }
     if (!parsed || typeof parsed !== 'object' || typeof (parsed as { type?: unknown }).type !== 'string') {
-      safeSend(ws, { type: 'error', message: 'Mensagem inválida.' });
+      safeSend(ws, { type: 'error', code: 'err.bad_message' });
       return;
     }
     try {

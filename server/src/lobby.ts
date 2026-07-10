@@ -154,7 +154,7 @@ export class Lobby {
 
   private createRoom(conn: Connection): void {
     if (conn.roomId) {
-      conn.send({ type: 'error', message: 'Você já está em uma sala.' });
+      conn.send({ type: 'error', code: 'err.already_in_room' });
       return;
     }
     const id = this.genRoomId();
@@ -175,20 +175,20 @@ export class Lobby {
 
   private joinRoom(conn: Connection, roomId: string): void {
     if (conn.roomId) {
-      conn.send({ type: 'error', message: 'Você já está em uma sala.' });
+      conn.send({ type: 'error', code: 'err.already_in_room' });
       return;
     }
     const room = this.rooms.get(roomId);
     if (!room) {
-      conn.send({ type: 'error', message: 'Sala não encontrada.' });
+      conn.send({ type: 'error', code: 'err.room_not_found' });
       return;
     }
     if (room.inGame) {
-      conn.send({ type: 'error', message: 'Essa sala já está em partida.' });
+      conn.send({ type: 'error', code: 'err.room_in_game' });
       return;
     }
     if (room.members.size >= MAX_PLAYERS_PER_ROOM) {
-      conn.send({ type: 'error', message: 'Sala cheia.' });
+      conn.send({ type: 'error', code: 'err.room_full' });
       return;
     }
     room.members.set(conn.id, { id: conn.id, ready: false, joinOrder: this.joinCounter++ });
@@ -269,11 +269,11 @@ export class Lobby {
     const room = this.rooms.get(conn.roomId);
     if (!room || room.inGame) return;
     if (room.hostId !== conn.id) {
-      conn.send({ type: 'error', message: 'Apenas o anfitrião pode adicionar bots.' });
+      conn.send({ type: 'error', code: 'err.host_only_bots' });
       return;
     }
     if (room.members.size >= MAX_PLAYERS_PER_ROOM) {
-      conn.send({ type: 'error', message: 'Sala cheia.' });
+      conn.send({ type: 'error', code: 'err.room_full' });
       return;
     }
     const botCount = [...room.members.values()].filter((m) => m.isBot).length;
@@ -309,16 +309,16 @@ export class Lobby {
     const room = this.rooms.get(conn.roomId);
     if (!room || room.inGame) return;
     if (room.hostId !== conn.id) {
-      conn.send({ type: 'error', message: 'Apenas o anfitrião pode iniciar a partida.' });
+      conn.send({ type: 'error', code: 'err.host_only_start' });
       return;
     }
     if (room.members.size < MIN_PLAYERS_TO_START) {
-      conn.send({ type: 'error', message: `São necessários pelo menos ${MIN_PLAYERS_TO_START} jogadores.` });
+      conn.send({ type: 'error', code: 'err.need_players', params: { n: MIN_PLAYERS_TO_START } });
       return;
     }
     const allReady = [...room.members.values()].every((m) => m.id === room.hostId || m.ready);
     if (!allReady) {
-      conn.send({ type: 'error', message: 'Nem todos os jogadores estão prontos.' });
+      conn.send({ type: 'error', code: 'err.not_all_ready' });
       return;
     }
 

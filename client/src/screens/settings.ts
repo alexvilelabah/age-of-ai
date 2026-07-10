@@ -2,7 +2,12 @@
 // aberto pela engrenagem em qualquer tela. Modelado no ConnLostOverlay.
 
 import { el } from '../ui';
-import { settings, RENDER_SCALES } from '../settings';
+import { settings, saveSettings, RENDER_SCALES, LANGS, type Lang } from '../settings';
+import { t } from '../i18n';
+
+/** Rótulo de cada idioma no seletor (sempre no próprio idioma — assim qualquer
+ *  um se reconhece, independente de quem está lendo). */
+const LANG_LABELS: Record<Lang, string> = { pt: 'Português', en: 'English', es: 'Español' };
 
 export interface SettingsDeps {
   onMusicVol: (v: number) => void;   // 0..1
@@ -17,14 +22,33 @@ export class SettingsOverlay {
   constructor(private deps: SettingsDeps) {
     this.el = el('div', 'overlay hidden');
     const card = el('div', 'panel card opt-card');
-    card.appendChild(el('h2', '', 'Opções'));
+    card.appendChild(el('h2', '', t('opt.title')));
 
-    card.appendChild(this.volumeRow('Música', settings.musicVol, (v) => this.deps.onMusicVol(v)));
-    card.appendChild(this.volumeRow('Efeitos', settings.sfxVol, (v) => this.deps.onSfxVol(v)));
+    // Idioma da interface — trocar recarrega a página (as telas montam o texto
+    // no construtor, então o reload re-traduz tudo de uma vez).
+    const langRow = el('div', 'opt-row');
+    langRow.appendChild(el('span', 'opt-label', t('opt.language')));
+    const langBtns = el('div', 'opt-scales');
+    for (const l of LANGS) {
+      const btn = el('button', 'btn scale-btn', LANG_LABELS[l]);
+      btn.classList.toggle('active', l === settings.lang);
+      btn.addEventListener('click', () => {
+        if (l === settings.lang) return;
+        settings.lang = l;
+        saveSettings();
+        location.reload();
+      });
+      langBtns.appendChild(btn);
+    }
+    langRow.appendChild(langBtns);
+    card.appendChild(langRow);
+
+    card.appendChild(this.volumeRow(t('opt.music'), settings.musicVol, (v) => this.deps.onMusicVol(v)));
+    card.appendChild(this.volumeRow(t('opt.sfx'), settings.sfxVol, (v) => this.deps.onSfxVol(v)));
 
     // Resolução (qualidade/desempenho)
     const res = el('div', 'opt-row');
-    res.appendChild(el('span', 'opt-label', 'Resolução'));
+    res.appendChild(el('span', 'opt-label', t('opt.resolution')));
     const scales = el('div', 'opt-scales');
     for (const s of RENDER_SCALES) {
       const btn = el('button', 'btn scale-btn', `${Math.round(s * 100)}%`);
@@ -36,10 +60,10 @@ export class SettingsOverlay {
     card.appendChild(res);
     this.markScale(settings.renderScale);
 
-    const hint = el('p', 'opt-hint', '75% ou 50% deixam o jogo mais leve (menos nítido).');
+    const hint = el('p', 'opt-hint', t('opt.res_hint'));
     card.appendChild(hint);
 
-    const close = el('button', 'btn primary', 'Fechar');
+    const close = el('button', 'btn primary', t('opt.close'));
     close.addEventListener('click', () => this.hide());
     card.appendChild(close);
 

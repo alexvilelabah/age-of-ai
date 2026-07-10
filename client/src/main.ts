@@ -5,6 +5,8 @@ import { Net } from './net';
 import { music } from './music';
 import { toast } from './ui';
 import { settings, saveSettings } from './settings';
+import { t, AGE_NAMES, BUILDING_NAMES } from './i18n';
+import type { BuildingType } from '@age/shared';
 import { getClientId, getSavedName, saveName } from './identity';
 import { NameScreen } from './screens/name';
 import { LobbyScreen } from './screens/lobby';
@@ -18,6 +20,9 @@ type ScreenName = 'name' | 'lobby' | 'room' | 'game';
 
 const app = document.getElementById('app');
 if (!app) throw new Error('elemento #app não encontrado');
+
+// idioma da página (acessibilidade/SEO) conforme a preferência detectada/salva
+document.documentElement.lang = settings.lang;
 
 const connBadge = document.createElement('div');
 connBadge.id = 'conn-badge';
@@ -53,8 +58,8 @@ document.body.appendChild(settingsOverlay.el);
 
 const gearBtn = document.createElement('button');
 gearBtn.id = 'settings-gear';
-gearBtn.title = 'Opções';
-gearBtn.setAttribute('aria-label', 'Opções');
+gearBtn.title = t('opt.title');
+gearBtn.setAttribute('aria-label', t('opt.title'));
 gearBtn.innerHTML = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
 gearBtn.addEventListener('click', () => settingsOverlay.show());
 document.body.appendChild(gearBtn);
@@ -66,7 +71,7 @@ const nameScreen = new NameScreen({
   onEnter: (name) => {
     // não vai pro lobby na hora: espera o servidor confirmar o nome (nameOk) ou
     // avisar que já está em uso (nameTaken).
-    nameScreen.setStatus('Entrando…');
+    nameScreen.setStatus(t('name.entering'));
     pendingName = name;
     net.send({ type: 'setName', name, clientId: getClientId() });
   },
@@ -128,12 +133,12 @@ net.onStatus = (status) => {
     // o servidor reenviará o estado apropriado (roomList/roomState) — o app
     // permanece na tela atual até novo comando do servidor.
   } else if (status === 'connecting') {
-    connBadge.textContent = current === 'name' || current === 'lobby' ? 'Conectando…' : '';
+    connBadge.textContent = current === 'name' || current === 'lobby' ? t('conn.connecting') : '';
   } else if (status === 'closed') {
     if (current === 'game') {
       gameScreen?.showConnLost();
     } else {
-      connBadge.textContent = 'Sem conexão — tentando reconectar…';
+      connBadge.textContent = t('conn.lost_retry');
     }
   }
 };
@@ -163,7 +168,7 @@ function dispatch(msg: ServerMessage): void {
       break;
     }
     case 'nameTaken': {
-      nameScreen.setStatus('Esse nome já está em uso. Escolha outro.');
+      nameScreen.setStatus(t('name.taken'));
       nameScreen.focus();
       break;
     }
@@ -191,7 +196,16 @@ function dispatch(msg: ServerMessage): void {
       break;
     }
     case 'error': {
-      toast(msg.message, 'error');
+      // Erro do servidor: traduz o código. `age` (número) e `building` (tipo)
+      // viram o nome no idioma do jogador aqui. `message` é reserva (texto pronto).
+      if (msg.code) {
+        const params: Record<string, string | number> = { ...(msg.params ?? {}) };
+        if (typeof params.age === 'number') params.age = AGE_NAMES[params.age] ?? params.age;
+        if (typeof params.building === 'string') params.building = BUILDING_NAMES[params.building as BuildingType] ?? params.building;
+        toast(t(msg.code, params), 'error');
+      } else if (msg.message) {
+        toast(msg.message, 'error');
+      }
       break;
     }
     case 'chat': {

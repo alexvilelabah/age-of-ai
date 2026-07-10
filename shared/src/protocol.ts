@@ -81,7 +81,10 @@ export type ServerMessage =
   | { type: 'roomList'; rooms: RoomSummary[] }
   | { type: 'roomState'; roomId: string; players: RoomPlayer[]; mode: GameMode }
   | { type: 'leftRoom' }
-  | { type: 'error'; message: string }
+  // Erro: o servidor manda um CÓDIGO (traduzido no cliente via i18n) + params
+  // opcionais. `age` (número) e `building` (tipo) são convertidos para o nome
+  // no idioma do jogador pelo cliente. `message` é reserva (texto pronto).
+  | { type: 'error'; code: string; params?: Record<string, string | number>; message?: string }
   | { type: 'chat'; from: string; text: string }
   | { type: 'gameStart'; map: MapData; players: PlayerInfo[]; you: number }
   | {

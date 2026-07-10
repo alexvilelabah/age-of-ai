@@ -2,6 +2,7 @@
 // do vencedor e botão "Voltar ao lobby".
 
 import { el } from '../ui';
+import { t } from '../i18n';
 
 export interface GameOverDeps {
   onBackToLobby: () => void;
@@ -17,7 +18,7 @@ export class GameOverScreen {
     const card = el('div', 'panel card');
     this.titleEl = el('h1', 'result-title');
     this.infoEl = el('p', 'subtitle');
-    const btn = el('button', 'btn primary', 'Voltar ao lobby');
+    const btn = el('button', 'btn primary', t('common.back_lobby'));
     btn.addEventListener('click', () => this.deps.onBackToLobby());
     card.appendChild(this.titleEl);
     card.appendChild(this.infoEl);
@@ -27,13 +28,13 @@ export class GameOverScreen {
 
   show(youWon: boolean, winnerName: string): void {
     if (youWon) {
-      this.titleEl.textContent = 'Vitória!';
+      this.titleEl.textContent = t('over.victory');
       this.titleEl.className = 'result-title win';
-      this.infoEl.textContent = 'Seu império prevaleceu.';
+      this.infoEl.textContent = t('over.victory_desc');
     } else {
-      this.titleEl.textContent = 'Derrota';
+      this.titleEl.textContent = t('over.defeat');
       this.titleEl.className = 'result-title lose';
-      this.infoEl.textContent = `${winnerName} venceu a partida.`;
+      this.infoEl.textContent = t('over.defeat_desc', { winner: winnerName });
     }
     this.el.classList.remove('hidden');
   }

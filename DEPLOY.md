@@ -1,66 +1,66 @@
-# Hospedar o Age of AI pela internet
+# Hosting Age of AI over the internet
 
-O jogo tem um **servidor autoritativo** (Node/WebSocket), então não basta um host estático:
-precisa de algo que rode Node. A forma mais simples e gratuita é usar um **Cloudflare Tunnel**,
-que expõe o servidor local com HTTPS **sem abrir porta no roteador** e escondendo seu IP.
+The game has an **authoritative server** (Node/WebSocket), so a static host isn't enough:
+you need something that runs Node. The simplest and free option is a **Cloudflare Tunnel**,
+which exposes your local server over HTTPS **without opening a port on your router** and hides your IP.
 
-## Pré-requisitos
+## Prerequisites
 
 - **Node.js 20+**
-- **`cloudflared`** (binário do Cloudflare Tunnel). Baixe em
+- **`cloudflared`** (the Cloudflare Tunnel binary). Download it from
   <https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/>
-  e coloque o `cloudflared.exe` na raiz do projeto (ele é ignorado pelo git de propósito).
+  and put `cloudflared.exe` in the project root (it's gitignored on purpose).
 
 ---
 
-## Opção A — Link temporário (mais simples, sem conta)
+## Option A — Temporary link (simplest, no account)
 
-Dê dois cliques em **`jogar-online.bat`**. Ele sobe servidor + cliente e cria um túnel anônimo;
-em segundos aparece um link `https://…trycloudflare.com` (copiado para a área de transferência).
+Double-click **`jogar-online.bat`**. It starts the server + client and creates an anonymous tunnel;
+within seconds a `https://…trycloudflare.com` link appears (copied to your clipboard).
 
-- ✅ Não precisa de conta nem domínio.
-- ⚠️ A URL é **aleatória e muda a cada execução** — não serve para divulgar.
+- ✅ No account or domain needed.
+- ⚠️ The URL is **random and changes every run** — not suitable for sharing publicly.
 
-## Opção B — Domínio fixo (modo produção, recomendado para divulgar)
+## Option B — Fixed domain (production mode, recommended for sharing)
 
-Serve o jogo **já buildado** (`client/dist`) por um único servidor Node, sempre no mesmo
-endereço. Só o jogo pronto fica exposto (não o servidor de desenvolvimento nem o código-fonte).
+Serves the **pre-built** game (`client/dist`) from a single Node server, always at the same
+address. Only the finished game is exposed (not the dev server or the source code).
 
-**1. Uma vez:** registre um domínio (o [Cloudflare Registrar](https://domains.cloudflare.com/)
-vende a preço de custo) e rode **`configurar-dominio.bat`**. Ele faz:
+**1. Once:** register a domain (the [Cloudflare Registrar](https://domains.cloudflare.com/)
+sells at cost) and run **`configurar-dominio.bat`**. It runs:
 
 ```
-cloudflared tunnel login          # autoriza na sua conta (abre o navegador)
-cloudflared tunnel create ageofai # cria o túnel
-cloudflared tunnel route dns ageofai SEU_DOMINIO.com
+cloudflared tunnel login          # authorize on your account (opens the browser)
+cloudflared tunnel create ageofai # create the tunnel
+cloudflared tunnel route dns ageofai YOUR_DOMAIN.com
 ```
 
-**2. Sempre que quiser hospedar:** dê dois cliques em **`jogar-online-fixo.bat`**. Ele builda o
-jogo, sobe o servidor de produção (porta 8080) e conecta o túnel → abre `https://SEU_DOMINIO.com`.
+**2. Whenever you want to host:** double-click **`jogar-online-fixo.bat`**. It builds the
+game, starts the production server (port 8080) and connects the tunnel → opens `https://YOUR_DOMAIN.com`.
 
-> **Fork?** Troque `playageofai.com` e o nome do túnel (`ageofai`) nos arquivos
-> `configurar_dominio.ps1` e `abrir_online_fixo.ps1` pelo seu domínio/túnel.
+> **Forking?** Replace `playageofai.com` and the tunnel name (`ageofai`) in the files
+> `configurar_dominio.ps1` and `abrir_online_fixo.ps1` with your own domain/tunnel.
 
-O servidor só fica no ar **enquanto o `jogar-online-fixo.bat` estiver aberto**. Feche a janela e
-o site sai do ar.
+The server is only online **while `jogar-online-fixo.bat` is open**. Close the window and
+the site goes offline.
 
 ---
 
-## Hospedar 24/7 num celular Android (Termux)
+## Hosting 24/7 on an Android phone (Termux)
 
-Um celular antigo plugado vira um servidor sempre-ligado, de graça, sem depender do PC.
+An old phone left plugged in becomes an always-on server, for free, without relying on your PC.
 
-1. Instale o **Termux** pelo [F-Droid](https://f-droid.org/packages/com.termux/) (não pela Play Store).
-2. No Termux: `pkg install nodejs git`, clone o repositório, `npm install`.
-3. Copie a pasta de credenciais do túnel do PC (`C:\Users\SEU_USUARIO\.cloudflared\`) para o
-   `~/.cloudflared/` do celular — assim o **mesmo domínio** funciona no celular.
-4. Rode o servidor de produção (`npm run build -w client` e `npm run start -w server`) e o túnel
+1. Install **Termux** from [F-Droid](https://f-droid.org/packages/com.termux/) (not the Play Store).
+2. In Termux: `pkg install nodejs git`, clone the repository, `npm install`.
+3. Copy the tunnel credentials folder from your PC (`C:\Users\YOUR_USER\.cloudflared\`) to the
+   phone's `~/.cloudflared/` — that way the **same domain** works on the phone.
+4. Run the production server (`npm run build -w client` and `npm run start -w server`) and the tunnel
    (`cloudflared tunnel run --url http://127.0.0.1:8080 ageofai`).
-5. Para não ser morto pelo Android: `termux-wake-lock`, Termux com bateria **"sem restrição"**, e
-   **Termux:Boot** para iniciar sozinho após reiniciar. Deixe o celular plugado.
+5. To keep Android from killing it: `termux-wake-lock`, set Termux battery to **"unrestricted"**, and
+   **Termux:Boot** to start automatically after a reboot. Keep the phone plugged in.
 
-### Trocar entre PC e celular
+### Switching between PC and phone
 
-O domínio "aponta para o túnel", não para uma máquina específica. As credenciais em
-`~/.cloudflared/` são o "chip": rode o túnel **só num aparelho por vez** (senão viram dois mundos
-de jogo separados). Para migrar, encerre num e suba no outro — a URL continua a mesma.
+The domain "points to the tunnel", not to a specific machine. The credentials in
+`~/.cloudflared/` are the "SIM card": run the tunnel on **only one device at a time** (otherwise you
+get two separate game worlds). To migrate, stop it on one and start it on the other — the URL stays the same.
