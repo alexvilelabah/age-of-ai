@@ -8,46 +8,63 @@ export interface NameScreenDeps {
   initialName?: string; // nome salvo (localStorage) p/ pré-preencher após refresh
 }
 
+function rand(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}
+
 export class NameScreen {
   readonly el: HTMLElement;
   private input: HTMLInputElement;
   private status: HTMLElement;
 
   constructor(private deps: NameScreenDeps) {
-    this.el = el('div', 'screen');
+    this.el = el('div', 'screen entry-screen');
 
-    // Moldura de quadro dourada com tudo dentro (primeira coisa que a pessoa vê).
-    const frame = el('div', 'entry-frame');
-    frame.appendChild(el('p', 'entry-kicker', t('name.welcome_to')));
-    frame.appendChild(el('h1', 'title entry-title', 'Age of AI'));
-    frame.appendChild(el('p', 'subtitle', t('name.subtitle')));
-    frame.appendChild(el('hr', 'entry-rule'));
-    frame.appendChild(el('p', 'entry-welcome', t('name.blurb')));
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    const card = el('div', 'entry-card');
-    card.appendChild(el('h2', '', t('name.join_heading')));
+    // (o fundo com a arte vem da classe .screen, via CSS — vale p/ todas as telas)
+
+    // Brasas subindo (o castelo em chamas) — vida leve e temática.
+    const embers = el('div', 'entry-embers');
+    if (!reduceMotion) {
+      for (let i = 0; i < 36; i++) {
+        const e = el('div', 'ember');
+        e.style.cssText =
+          `--x:${Math.round(rand(0, 100))}%;` +
+          `--size:${rand(2, 5).toFixed(1)}px;` +
+          `--dur:${rand(7, 15).toFixed(1)}s;` +
+          `--delay:${(-rand(0, 15)).toFixed(1)}s;` +
+          `--drift:${Math.round(rand(-38, 38))}px;` +
+          `--sway:${rand(2.5, 5).toFixed(1)}s`;
+        embers.appendChild(e);
+      }
+    }
+    this.el.appendChild(embers);
+
+    // Login mínimo sobre a arte — a moldura e o título "Age of AI" já vêm da imagem.
+    const login = el('div', 'entry-login');
+    login.appendChild(el('h2', 'entry-login-title', t('name.join_heading')));
 
     this.input = el('input', 'txt');
     this.input.type = 'text';
     this.input.maxLength = 20;
     this.input.placeholder = t('name.placeholder');
     if (this.deps.initialName) this.input.value = this.deps.initialName;
-    card.appendChild(this.input);
+    login.appendChild(this.input);
 
     const btn = el('button', 'btn primary', t('name.enter'));
     btn.addEventListener('click', () => this.submit());
     this.input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this.submit();
     });
-    card.appendChild(btn);
+    login.appendChild(btn);
 
     this.status = el('div', 'status-line');
-    card.appendChild(this.status);
-    frame.appendChild(card);
+    login.appendChild(this.status);
 
-    frame.appendChild(el('p', 'entry-foot', t('name.footer')));
+    login.appendChild(el('p', 'entry-login-foot', t('name.footer')));
 
-    this.el.appendChild(frame);
+    this.el.appendChild(login);
   }
 
   setStatus(text: string): void {

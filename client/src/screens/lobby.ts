@@ -19,7 +19,7 @@ export class LobbyScreen {
   constructor(private deps: LobbyScreenDeps) {
     this.el = el('div', 'screen');
 
-    const title = el('h1', 'title', 'Age of AI');
+    // (sem título "Age of AI" aqui — ele já vem do banner na arte de fundo)
     const card = el('div', 'panel card wide');
     const header = el('div', 'row');
     header.appendChild(el('h2', '', t('lobby.rooms')));
@@ -37,7 +37,6 @@ export class LobbyScreen {
     actions.appendChild(refreshBtn);
     card.appendChild(actions);
 
-    this.el.appendChild(title);
     this.el.appendChild(card);
     this.renderList();
   }

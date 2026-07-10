@@ -13,9 +13,13 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { GAME_PORT } from '@age/shared';
 import type { ClientMessage, ServerMessage } from '@age/shared';
 import { Lobby } from './lobby';
+import { readMetrics, MONITOR_HTML } from './metrics';
 
 const lobby = new Lobby();
 const PORT = Number(process.env.PORT) || GAME_PORT;
+// Senha do painel /sistema (simples — a proteção real é a URL discreta + noindex).
+// Dá pra sobrescrever com a env MONITOR_KEY. Sem o ?k correto, responde 404.
+const MONITOR_KEY = process.env.MONITOR_KEY || '123';
 
 // Pasta do cliente buildado (vite build -> client/dist), resolvida a partir
 // deste arquivo (server/src) e nao do diretorio de trabalho.
@@ -50,6 +54,27 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): void 
   if (urlPath === '/status') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(lobby.stats()));
+    return;
+  }
+
+  // Painel de métricas do celular numa URL DISCRETA /sistema (LEVE: lê SOB
+  // DEMANDA, sem processo em background — fecha a aba e o custo zera). Protegido
+  // por senha (?k=) e marcado noindex p/ não aparecer no Google. ?data=1 = JSON.
+  // Removível apagando este bloco + o import de ./metrics.
+  if (urlPath === '/sistema') {
+    const u = new URL(req.url ?? '/', 'http://localhost');
+    if (u.searchParams.get('k') !== MONITOR_KEY) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('404');
+      return;
+    }
+    if (u.searchParams.get('data') === '1') {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });
+      res.end(JSON.stringify({ ...readMetrics(), ...lobby.stats() }));
+    } else {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'X-Robots-Tag': 'noindex, nofollow' });
+      res.end(MONITOR_HTML);
+    }
     return;
   }
 

@@ -116,6 +116,96 @@ input.txt:focus { border-color: var(--gold); }
 .entry-card h2 { margin: 0 0 2px; color: var(--gold); font-variant: small-caps; font-weight: 600; letter-spacing: 1px; font-size: 20px; text-align: center; border-bottom: 1px solid var(--border-dim); padding-bottom: 8px; }
 .entry-foot { color: var(--muted); font-size: 12.5px; text-align: center; letter-spacing: 0.5px; margin: 12px 0 0; opacity: 0.85; }
 
+/* ===== Tela de entrada: arte emoldurada em tela cheia (imagem gerada por IA) ===== */
+.entry-screen { overflow: hidden; justify-content: flex-end; }
+
+/* Fundo épico (a arte emoldurada) em TODAS as telas de menu — até entrar no jogo.
+   Fica atrás do conteúdo (z-index -1) e some sozinho no jogo (#game-root cobre). */
+.screen::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: url('/ageofai.jpg') center top / cover no-repeat, #070503;
+  pointer-events: none;
+}
+
+/* Brasas subindo por cima da arte — o "movimento suave". */
+.entry-screen .entry-embers {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.entry-screen .ember {
+  position: absolute;
+  left: var(--x);
+  bottom: -14px;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffe6a6 0%, #f2ab42 42%, rgba(214, 120, 40, 0) 72%);
+  box-shadow: 0 0 6px rgba(240, 170, 70, 0.5);
+  opacity: 0;
+  animation:
+    ember-rise var(--dur) linear var(--delay) infinite,
+    ember-sway var(--sway) ease-in-out var(--delay) infinite alternate;
+  will-change: transform, opacity, margin-left;
+}
+@keyframes ember-rise {
+  0%   { transform: translateY(0) scale(0.55); opacity: 0; }
+  10%  { opacity: 0.85; }
+  75%  { opacity: 0.5; }
+  100% { transform: translateY(-90vh) scale(1); opacity: 0; }
+}
+@keyframes ember-sway {
+  from { margin-left: calc(var(--drift) * -1); }
+  to   { margin-left: var(--drift); }
+}
+
+/* Login mínimo e discreto, num ponto calmo da arte (centro-baixo, sobre o vale). */
+.entry-screen .entry-login {
+  position: relative;
+  z-index: 2;
+  width: 340px;
+  max-width: 90vw;
+  margin-bottom: 45vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(12, 8, 4, 0.6), rgba(8, 5, 2, 0.72));
+  backdrop-filter: blur(4px) saturate(1.05);
+  -webkit-backdrop-filter: blur(4px) saturate(1.05);
+  border: 1px solid rgba(217, 169, 65, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), inset 0 0 20px rgba(0, 0, 0, 0.35);
+}
+.entry-screen .entry-login-title {
+  margin: 0;
+  text-align: center;
+  color: var(--gold-bright);
+  font-variant: small-caps;
+  letter-spacing: 1px;
+  font-size: 19px;
+  font-weight: 600;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+}
+.entry-screen .entry-login .txt { text-align: center; }
+.entry-screen .entry-login-foot {
+  margin: 2px 0 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entry-screen .ember { animation: none; opacity: 0; }
+}
+
 /* ===== Menu de Opções (engrenagem + sliders) ===== */
 #settings-gear {
   position: fixed; top: 12px; right: 12px; z-index: 35;
@@ -189,7 +279,7 @@ input.txt:focus { border-color: var(--gold); }
 .ready-tag.no { color: var(--muted); }
 .chat-panel { display: flex; flex-direction: column; gap: 8px; }
 .chat-log {
-  height: 140px;
+  height: 84px;
   overflow-y: auto;
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid var(--border-dim);
