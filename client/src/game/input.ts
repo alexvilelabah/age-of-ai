@@ -458,6 +458,15 @@ export class GameInput {
     if (this.ui.orders.length > 10) this.ui.orders.shift();
   }
 
+  /** Move as unidades próprias selecionadas até uma posição do MUNDO. Público
+   *  porque o clique DIREITO no minimapa (estilo AoE) chama isto de fora. */
+  orderMoveTo(worldX: number, worldY: number, queue = false): void {
+    const ownUnits = this.gs.selectedOwnUnits();
+    if (ownUnits.length === 0) return;
+    this.mark('move', worldX, worldY);
+    this.cmd({ kind: 'move', unitIds: ownUnits.map((u) => u.id), x: worldX, y: worldY, queue });
+  }
+
   private handleRightClick(pos: { x: number; y: number }, queue = false): void {
     const w = this.cam.screenToWorld(pos.x, pos.y);
     const ownUnits = this.gs.selectedOwnUnits();

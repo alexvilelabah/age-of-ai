@@ -31,7 +31,11 @@ export class Minimap {
     this.dragging = false;
   };
 
-  constructor(private gs: GameState, private cam: Camera) {
+  constructor(
+    private gs: GameState,
+    private cam: Camera,
+    private onOrderMove?: (worldX: number, worldY: number, queue?: boolean) => void,
+  ) {
     this.el = el('div', 'minimap-wrap');
     this.canvas = el('canvas');
     this.canvas.id = 'minimap';
@@ -44,11 +48,19 @@ export class Minimap {
     this.ctx = this.canvas.getContext('2d');
     this.terrain = this.buildTerrain();
 
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     this.canvas.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      this.dragging = true;
-      this.jump(e);
+      if (e.button === 0) {
+        // esquerdo: leva a câmera pra lá (arrasto move junto)
+        e.preventDefault();
+        this.dragging = true;
+        this.jump(e);
+      } else if (e.button === 2) {
+        // direito: manda as unidades selecionadas pra lá (estilo AoE)
+        e.preventDefault();
+        const w = this.eventToWorld(e);
+        if (w) this.onOrderMove?.(w.x, w.y, e.shiftKey);
+      }
     });
     window.addEventListener('mousemove', this.onWinMove);
     window.addEventListener('mouseup', this.onWinUp);
@@ -93,13 +105,18 @@ export class Minimap {
     return { x: (a + b) / 2, y: (b - a) / 2 };
   }
 
-  private jump(e: MouseEvent): void {
+  /** Ponto do MUNDO (tile) correspondente ao clique no minimapa. */
+  private eventToWorld(e: MouseEvent): { x: number; y: number } | null {
     const rect = this.canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+    if (rect.width <= 0 || rect.height <= 0) return null;
     const mx = ((e.clientX - rect.left) / rect.width) * MINI_W;
     const my = ((e.clientY - rect.top) / rect.height) * MINI_H;
-    const w = this.unproject(mx, my);
-    this.cam.centerOn(w.x, w.y);
+    return this.unproject(mx, my);
+  }
+
+  private jump(e: MouseEvent): void {
+    const w = this.eventToWorld(e);
+    if (w) this.cam.centerOn(w.x, w.y);
   }
 
   draw(now: number): void {

@@ -81,7 +81,7 @@ export class GameScreen {
     this.createHud();
     root.appendChild(this.hud.el);
 
-    this.minimap = new Minimap(gs, this.cam);
+    this.minimap = new Minimap(gs, this.cam, (wx, wy, queue) => this.input.orderMoveTo(wx, wy, queue));
     this.hud.minimapSlot.appendChild(this.minimap.el);
 
     this.connLost = new ConnLostOverlay({ onBackToLobby: () => this.deps.onBackToLobby() });

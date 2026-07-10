@@ -177,7 +177,7 @@ function tryGenerate(playerCount: number, seed: number, forceCarve = false): Gen
   }
 
   // --- Recursos espalhados pelo resto do mapa ---
-  const forestClusters = 11;
+  const forestClusters = 22; // ~2x florestas espalhadas (mais madeira pelo mapa)
   for (let i = 0; i < forestClusters; i++) {
     const c = randomFarPoint(rng, size, spawns, 10);
     placeClusterNodes('tree', 8 + Math.floor(rng() * 7), c.x, c.y, size, rng, placeNode); // 8..14

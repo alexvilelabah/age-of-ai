@@ -18,6 +18,7 @@ import {
   countsForAgeUp,
   MAX_AGE,
   NODE_DEFS,
+  POP_CAP_MAX,
   TECH_DEFS,
   TRADE_LOT,
   TRAIN_QUEUE_MAX,
@@ -658,9 +659,15 @@ export class Hud {
       const myAge = this.gs.me()?.age ?? 1;
       // pré-requisitos concluídos (árvore do AoE2): tipos que EU já tenho prontos
       const done = new Set<BuildingType>();
+      // População que os MEUS prédios fornecem (contando os em obra também): ao
+      // bater o teto POP_CAP_MAX, casa não ajuda mais e o botão dela apaga.
+      let myPopProvided = 0;
       for (const b of this.gs.buildings.values()) {
-        if (b.owner === this.gs.you && b.progress >= 1) done.add(b.type);
+        if (b.owner !== this.gs.you) continue;
+        if (b.progress >= 1) done.add(b.type);
+        myPopProvided += BUILDING_DEFS[b.type]?.popProvided ?? 0;
       }
+      const popMaxed = myPopProvided >= POP_CAP_MAX;
       for (const [type, btn] of this.buildBtns) {
         const def = BUILDING_DEFS[type];
         // estilo AoE2: o que ainda não está liberado (era futura ou sem o
@@ -669,9 +676,12 @@ export class Hud {
         btn.style.display = available ? '' : 'none';
         if (!available) continue;
         btn.classList.remove('locked');
-        btn.classList.toggle('off', !this.canAfford(def.cost));
+        const houseMaxed = type === 'house' && popMaxed;
+        btn.classList.toggle('off', !this.canAfford(def.cost) || houseMaxed);
         btn.classList.toggle('active', placement === type);
-        btn.dataset.tipTitle = t('hud.building_cost', { building: BUILDING_NAMES[type], cost: costLongText(def.cost), time: def.buildTime });
+        btn.dataset.tipTitle = houseMaxed
+          ? t('hud.house_pop_maxed', { max: POP_CAP_MAX })
+          : t('hud.building_cost', { building: BUILDING_NAMES[type], cost: costLongText(def.cost), time: def.buildTime });
       }
       return;
     }
