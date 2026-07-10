@@ -22,26 +22,46 @@ export interface Metrics {
   procUptimeS: number;
 }
 
-// --- CPU: guarda o snapshot anterior pra calcular o delta (% de uso) ---
-function cpuTotals(): { idle: number; total: number } {
-  let idle = 0;
-  let total = 0;
-  for (const c of os.cpus()) {
-    for (const t of Object.values(c.times)) total += t;
-    idle += c.times.idle;
+// --- CPU: delta entre leituras. Usa os.cpus(); no Android/Termux esse array às
+// vezes vem VAZIO, então cai pro /proc/stat (linha "cpu ") como fallback. ---
+function cpuTotals(): { idle: number; total: number } | null {
+  const cpus = os.cpus();
+  if (cpus.length > 0) {
+    let idle = 0;
+    let total = 0;
+    for (const c of cpus) {
+      for (const t of Object.values(c.times)) total += t;
+      idle += c.times.idle;
+    }
+    return { idle, total };
   }
-  return { idle, total };
+  try {
+    const first = fs.readFileSync('/proc/stat', 'utf8').split('\n')[0]; // "cpu u n s idle iowait irq softirq steal..."
+    const p = first.trim().split(/\s+/).slice(1).map((v) => parseInt(v, 10));
+    if (p.length >= 4 && p.every((v) => Number.isFinite(v))) {
+      return { idle: p[3] + (p[4] || 0), total: p.reduce((a, b) => a + b, 0) };
+    }
+  } catch { /* sem /proc */ }
+  return null;
 }
 let prevCpu = cpuTotals();
 
 function cpuPercent(): number | null {
   const cur = cpuTotals();
-  const dTotal = cur.total - prevCpu.total;
-  const dIdle = cur.idle - prevCpu.idle;
+  const prev = prevCpu;
   prevCpu = cur;
+  if (!cur || !prev) return null;
+  const dTotal = cur.total - prev.total;
+  const dIdle = cur.idle - prev.idle;
   if (dTotal <= 0) return null;
   const pct = (1 - dIdle / dTotal) * 100;
   return Math.round(Math.max(0, Math.min(100, pct)) * 10) / 10;
+}
+
+function coreCount(): number {
+  const n = os.cpus().length;
+  if (n > 0) return n;
+  try { return (fs.readFileSync('/proc/stat', 'utf8').match(/^cpu\d+/gm) || []).length; } catch { return 0; }
 }
 
 // --- Temperatura: maior valor legível dos sensores (best-effort) ---
@@ -111,7 +131,7 @@ export function readMetrics(): Metrics {
   return {
     timeMs: Date.now(),
     cpuPct: cpuPercent(),
-    cores: os.cpus().length,
+    cores: coreCount(),
     memUsedMB: Math.round(memUsed / MB),
     memTotalMB: Math.round(memTotal / MB),
     memPct: Math.round((memUsed / memTotal) * 100),
