@@ -18,7 +18,7 @@ import {
   UNIT_AGE_REQ,
   UNIT_DEFS,
 } from '@age/shared';
-import type { BuildingType, NodeType, ResourceType, UnitType } from '@age/shared';
+import type { BotDifficulty, BuildingType, NodeType, ResourceType, UnitType } from '@age/shared';
 import { idx, type Grid } from './path';
 import type { Game } from './room';
 import type { Building, ResNode, Unit } from './state';
@@ -66,6 +66,31 @@ const PROFILES: readonly BotProfile[] = [
   { name: 'economic',   targetVillagers: 20, attackArmy: 10, wallAge: 3, wallRadius: 15, stoneReserve: 90,  maxTowers: 2, extraBarracks: 0 },
 ];
 
+// --- Dificuldade (escolhida ao adicionar o bot; estilo Age of Mythology) ---
+// A PERSONALIDADE (PROFILES, acima) define o ESTILO (muralha/torre/defesa); a
+// DIFICULDADE define a FORCA: tamanho da economia, exercito pra atacar,
+// velocidade pra subir de era, se o bot ATACA primeiro e o bonus de recursos
+// iniciais (Tita no mais dificil). Assim dois bots do mesmo nivel ainda variam.
+export interface DifficultySettings {
+  /** false = passivo: nunca ataca primeiro (so revida — o motor faz isso sozinho). */
+  initiatesAttacks: boolean;
+  /** Quantos aldeoes o bot tenta manter. */
+  targetVillagers: number;
+  /** Soldados acumulados antes de partir pro ataque. */
+  attackArmy: number;
+  /** Aldeoes minimos (na era 1) pra comecar a pesquisar a proxima era. */
+  ageGateVillagers: number;
+  /** Multiplicador dos recursos iniciais (>1 = bonus estilo Tita). */
+  resourceMult: number;
+}
+
+export const DIFFICULTY: Record<BotDifficulty, DifficultySettings> = {
+  easy:   { initiatesAttacks: false, targetVillagers: 10, attackArmy: 99, ageGateVillagers: 9, resourceMult: 1 },
+  normal: { initiatesAttacks: true,  targetVillagers: 16, attackArmy: 9,  ageGateVillagers: 6, resourceMult: 1 },
+  hard:   { initiatesAttacks: true,  targetVillagers: 22, attackArmy: 6,  ageGateVillagers: 5, resourceMult: 1 },
+  expert: { initiatesAttacks: true,  targetVillagers: 28, attackArmy: 5,  ageGateVillagers: 4, resourceMult: 1.6 },
+};
+
 const ROAD_RADIUS = 22;
 const BASE_APRON = 2;
 const MAX_CONCURRENT_CORE_BUILDS = 2;
@@ -91,6 +116,7 @@ export function runBotAI(game: Game, botId: number): void {
   const military = units.filter((u) => u.type !== 'villager');
   const nodes = [...game.nodes.values()];
   const profile = profileFor(botId);
+  const diff = DIFFICULTY[player.difficulty ?? 'normal'];
   const base = buildingCenter(tc);
   const enemy = nearestEnemyBuilding(game, botId, base.x, base.y);
   const enemyPoint = enemy ? buildingCenter(enemy) : { x: game.grid.size / 2, y: game.grid.size / 2 };
@@ -138,7 +164,7 @@ export function runBotAI(game: Game, botId: number): void {
   const ageReady = haveAgeBuildings.size >= ageNeed;
   const ageCost = player.age < MAX_AGE ? (AGE_COSTS[player.age + 1] ?? {}) : {};
   const wantsAge = !player.ageResearch && player.age < MAX_AGE
-    && villagers.length >= 6 + (player.age - 1) * 3;
+    && villagers.length >= diff.ageGateVillagers + (player.age - 1) * 3;
   const preparingAge = wantsAge && haveAgeBuildings.size >= Math.max(0, ageNeed - 1);
 
   // Quando os requisitos estao prontos, economiza e avanca antes de gastar em
@@ -150,7 +176,7 @@ export function runBotAI(game: Game, botId: number): void {
   }
 
   // Mantem a producao de aldeoes, exceto no exato tick em que compra uma era.
-  if (!advancingNow && tc.progress >= 1 && villagers.length < profile.targetVillagers
+  if (!advancingNow && tc.progress >= 1 && villagers.length < diff.targetVillagers
     && pop < popCap && tc.queue.length < TRAIN_QUEUE_MAX && afford(UNIT_DEFS.villager.cost)) {
     game.enqueueCommand(botId, { kind: 'train', buildingId: tc.id, unit: 'villager' });
   }
@@ -234,7 +260,10 @@ export function runBotAI(game: Game, botId: number): void {
     }
   }
 
-  if (military.length >= profile.attackArmy) {
+  // Fácil (initiatesAttacks=false) nunca parte pro ataque — só revida (o motor
+  // faz o auto-aggro dos soldados ociosos). Os outros níveis atacam ao juntar
+  // o exército do nível.
+  if (diff.initiatesAttacks && military.length >= diff.attackArmy) {
     const target = nearestEnemyBuilding(game, botId, base.x, base.y);
     const ready = military.filter((u) => u.state === 'idle');
     if (target && ready.length) {

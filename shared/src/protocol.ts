@@ -50,6 +50,10 @@ export type MarketPrices = Record<'food' | 'wood' | 'stone', number>;
  * já numa era avançada — jogo rápido, direto pro combate). */
 export type GameMode = 'normal' | 'batalha';
 
+/** Nível de dificuldade de um bot (escolhido ao adicionar na sala). 'easy' =
+ * passivo (só se defende); 'expert' = agressivo + bônus de recursos (Titã). */
+export type BotDifficulty = 'easy' | 'normal' | 'hard' | 'expert';
+
 export type ClientMessage =
   | { type: 'setName'; name: string; clientId?: string }
   | { type: 'setMode'; mode: GameMode } // apenas host: escolhe Normal/Batalha na sala
@@ -58,7 +62,7 @@ export type ClientMessage =
   | { type: 'joinRoom'; roomId: string }
   | { type: 'leaveRoom' }
   | { type: 'setReady'; ready: boolean }
-  | { type: 'addBot' } // apenas host: adiciona um oponente de IA à sala
+  | { type: 'addBot'; difficulty?: BotDifficulty } // apenas host: adiciona um oponente de IA à sala
   | { type: 'removeBot' } // apenas host: remove o último bot
   | { type: 'startGame' } // apenas host
   | { type: 'chat'; text: string }
@@ -81,6 +85,7 @@ export interface RoomPlayer {
   isHost: boolean;
   color: string;
   isBot?: boolean;
+  difficulty?: BotDifficulty; // só bots
 }
 
 export type ServerMessage =

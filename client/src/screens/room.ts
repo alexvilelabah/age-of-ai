@@ -1,7 +1,7 @@
 // Tela 3: Sala — lista de jogadores (cor, pronto, coroa de host), toggle
 // "Pronto", "Iniciar partida" (só host), "Sair da sala" e chat.
 
-import type { GameMode, RoomPlayer } from '@age/shared';
+import type { BotDifficulty, GameMode, RoomPlayer } from '@age/shared';
 import { MAX_PLAYERS_PER_ROOM, MIN_PLAYERS_TO_START } from '@age/shared';
 import { el } from '../ui';
 import { t } from '../i18n';
@@ -11,7 +11,7 @@ export interface RoomScreenDeps {
   onStartGame: () => void;
   onLeaveRoom: () => void;
   onChat: (text: string) => void;
-  onAddBot: () => void;
+  onAddBot: (difficulty: BotDifficulty) => void;
   onRemoveBot: () => void;
   onSetMode: (mode: GameMode) => void;
 }
@@ -31,6 +31,10 @@ export class RoomScreen {
   private myId = -1;
   private mode: GameMode = 'normal';
   private modeBtns: { m: GameMode; btn: HTMLButtonElement }[] = [];
+  // Dificuldade do PRÓXIMO bot a ser adicionado (só o host escolhe).
+  private selectedBotDifficulty: BotDifficulty = 'normal';
+  private diffRow!: HTMLElement;
+  private diffBtns: { d: BotDifficulty; btn: HTMLButtonElement }[] = [];
 
   constructor(private deps: RoomScreenDeps) {
     this.el = el('div', 'screen');
@@ -58,6 +62,29 @@ export class RoomScreen {
     }
     card.appendChild(modeRow);
 
+    // Dificuldade do próximo bot (só o host; estilo Age of Mythology).
+    const diffRow = el('div', 'row mode-row diff-row');
+    diffRow.appendChild(el('span', 'mode-label', t('room.difficulty')));
+    const diffOpts: { d: BotDifficulty; label: string; title: string }[] = [
+      { d: 'easy', label: t('room.diff_easy'), title: t('room.diff_easy_desc') },
+      { d: 'normal', label: t('room.diff_normal'), title: t('room.diff_normal_desc') },
+      { d: 'hard', label: t('room.diff_hard'), title: t('room.diff_hard_desc') },
+      { d: 'expert', label: t('room.diff_expert'), title: t('room.diff_expert_desc') },
+    ];
+    for (const o of diffOpts) {
+      const btn = el('button', 'btn mode-btn', o.label);
+      btn.title = o.title;
+      btn.addEventListener('click', () => {
+        this.selectedBotDifficulty = o.d;
+        this.updateDiffButtons();
+      });
+      this.diffBtns.push({ d: o.d, btn });
+      diffRow.appendChild(btn);
+    }
+    this.diffRow = diffRow;
+    this.updateDiffButtons();
+    card.appendChild(diffRow);
+
     const actions = el('div', 'row');
     this.readyBtn = el('button', 'btn primary', t('room.ready'));
     this.readyBtn.addEventListener('click', () => this.deps.onToggleReady());
@@ -66,7 +93,7 @@ export class RoomScreen {
     this.startBtn.addEventListener('click', () => this.deps.onStartGame());
     this.addBotBtn = el('button', 'btn', t('room.add_bot'));
     this.addBotBtn.title = t('room.add_bot_desc');
-    this.addBotBtn.addEventListener('click', () => this.deps.onAddBot());
+    this.addBotBtn.addEventListener('click', () => this.deps.onAddBot(this.selectedBotDifficulty));
     this.removeBotBtn = el('button', 'btn', t('room.remove_bot'));
     this.removeBotBtn.addEventListener('click', () => this.deps.onRemoveBot());
     const leaveBtn = el('button', 'btn danger', t('room.leave'));
@@ -130,7 +157,13 @@ export class RoomScreen {
     this.startBtn.disabled = !(isHost && enoughPlayers && nonHostReady);
 
     this.addBotBtn.classList.toggle('hidden', !isHost || this.players.length >= MAX_PLAYERS_PER_ROOM);
+    this.diffRow.classList.toggle('hidden', !isHost || this.players.length >= MAX_PLAYERS_PER_ROOM);
     this.removeBotBtn.classList.toggle('hidden', !isHost || !this.players.some((p) => p.isBot));
+  }
+
+  /** Destaca o botão da dificuldade escolhida pro próximo bot. */
+  private updateDiffButtons(): void {
+    for (const { d, btn } of this.diffBtns) btn.classList.toggle('primary', d === this.selectedBotDifficulty);
   }
 
   addChat(from: string, text: string): void {
@@ -149,7 +182,10 @@ export class RoomScreen {
       swatch.style.background = p.color;
       row.appendChild(swatch);
       row.appendChild(el('span', 'pname', p.name + (p.id === this.myId ? t('common.you_suffix') : '')));
-      if (p.isBot) row.appendChild(el('span', '', '🤖'));
+      if (p.isBot) {
+        row.appendChild(el('span', '', '🤖'));
+        row.appendChild(el('span', 'bot-diff', t(`room.diff_${p.difficulty ?? 'normal'}`)));
+      }
       if (p.isHost) row.appendChild(el('span', '', '👑'));
       const tag = el('span', `ready-tag ${p.ready ? 'yes' : 'no'}`, p.ready ? t('room.tag_ready') : t('room.tag_waiting'));
       row.appendChild(tag);

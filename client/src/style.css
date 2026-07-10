@@ -277,6 +277,18 @@ input.txt:focus { border-color: var(--gold); }
 .ready-tag { font-size: 13px; white-space: nowrap; }
 .ready-tag.yes { color: var(--green); }
 .ready-tag.no { color: var(--muted); }
+.bot-diff {
+  font-size: 12px;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+/* Seletor de dificuldade do bot: 4 botões, rótulos curtos (cabe "Muito difícil"). */
+.diff-row { flex-wrap: wrap; }
+.diff-row .mode-btn { font-size: 13px; padding: 6px 4px; min-width: 0; }
 .chat-panel { display: flex; flex-direction: column; gap: 8px; }
 .chat-log {
   height: 84px;

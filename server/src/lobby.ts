@@ -1,7 +1,7 @@
 // Lobby: conexões, salas, chat e transição sala -> partida.
 
 import { MAX_PLAYERS_PER_ROOM, MIN_PLAYERS_TO_START, PLAYER_COLORS } from '@age/shared';
-import type { ClientMessage, GameMode, RoomPlayer, RoomSummary, ServerMessage } from '@age/shared';
+import type { BotDifficulty, ClientMessage, GameMode, RoomPlayer, RoomSummary, ServerMessage } from '@age/shared';
 import { Game, type RoomMember } from './game/room';
 
 export interface Connection {
@@ -17,6 +17,7 @@ interface RoomPlayerState {
   ready: boolean;
   joinOrder: number;
   isBot?: boolean;
+  difficulty?: BotDifficulty; // apenas bots
   name?: string; // apenas bots (não têm Connection)
   clientId?: string;   // identidade estável do navegador (p/ reconectar na MESMA partida)
   disconnected?: boolean; // caiu no meio do jogo e a vaga está reservada (aguardando reconexão)
@@ -94,7 +95,7 @@ export class Lobby {
         this.setReady(conn, msg.ready);
         break;
       case 'addBot':
-        this.addBot(conn);
+        this.addBot(conn, msg.difficulty);
         break;
       case 'removeBot':
         this.removeBot(conn);
@@ -373,7 +374,7 @@ export class Lobby {
     this.broadcastRoomState(room.id);
   }
 
-  private addBot(conn: Connection): void {
+  private addBot(conn: Connection, difficulty?: BotDifficulty): void {
     if (!conn.roomId) return;
     const room = this.rooms.get(conn.roomId);
     if (!room || room.inGame) return;
@@ -392,6 +393,7 @@ export class Lobby {
       ready: true, // bots já entram prontos
       joinOrder: this.joinCounter++,
       isBot: true,
+      difficulty: difficulty ?? 'normal',
       name: `Bot ${botCount + 1}`,
     });
     this.broadcastRoomState(room.id);
@@ -443,6 +445,7 @@ export class Lobby {
         name: m.isBot ? m.name ?? 'Bot' : c?.name ?? `Jogador ${m.id}`,
         color: PLAYER_COLORS[i % PLAYER_COLORS.length],
         isBot: !!m.isBot,
+        difficulty: m.difficulty,
       };
     });
 
@@ -549,6 +552,7 @@ export class Lobby {
         isHost: m.id === room.hostId,
         color: PLAYER_COLORS[i % PLAYER_COLORS.length],
         isBot: !!m.isBot,
+        difficulty: m.difficulty,
       };
     });
     const msg: ServerMessage = { type: 'roomState', roomId, players, mode: room.mode };

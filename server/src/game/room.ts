@@ -37,6 +37,7 @@ import {
   tradeSellGain,
 } from '@age/shared';
 import type {
+  BotDifficulty,
   BuildingSnap,
   BuildingType,
   GameCommand,
@@ -51,7 +52,7 @@ import type {
   UnitSnap,
   UnitType,
 } from '@age/shared';
-import { runBotAI } from './ai';
+import { DIFFICULTY, runBotAI } from './ai';
 import { generateMap } from './mapgen';
 import { collectSpreadTiles, findPath, idx, isWalkable, nearestWalkableTile, ringTiles, type Grid } from './path';
 import { createUnit, type Building, type GamePlayer, type ResNode, type Unit } from './state';
@@ -66,6 +67,7 @@ export interface RoomMember {
   name: string;
   color: string;
   isBot?: boolean;
+  difficulty?: BotDifficulty; // só bots
 }
 
 export type SendFn = (playerId: number, msg: ServerMessage) => void;
@@ -102,15 +104,24 @@ export class Game {
     this.nextId = gen.nextId;
 
     const battle = mode === 'batalha';
+    const baseRes = battle ? BATTLE_STARTING_RESOURCES : STARTING_RESOURCES;
     members.forEach((m) => {
+      // Muito difícil (Titã): o bot começa com um bônus de recursos.
+      const mult = m.isBot && m.difficulty ? DIFFICULTY[m.difficulty].resourceMult : 1;
       this.players.set(m.id, {
         id: m.id,
         name: m.name,
         color: m.color,
-        resources: { ...(battle ? BATTLE_STARTING_RESOURCES : STARTING_RESOURCES) },
+        resources: {
+          food: Math.round(baseRes.food * mult),
+          wood: Math.round(baseRes.wood * mult),
+          gold: Math.round(baseRes.gold * mult),
+          stone: Math.round(baseRes.stone * mult),
+        },
         defeated: false,
         age: battle ? BATTLE_STARTING_AGE : 1,
         techs: new Set<string>(),
+        difficulty: m.difficulty,
       });
       if (m.isBot) this.botIds.add(m.id);
     });

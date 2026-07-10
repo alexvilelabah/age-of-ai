@@ -113,7 +113,7 @@ const roomScreen = new RoomScreen({
     net.send({ type: 'listRooms' });
   },
   onChat: (text) => net.send({ type: 'chat', text }),
-  onAddBot: () => net.send({ type: 'addBot' }),
+  onAddBot: (difficulty) => net.send({ type: 'addBot', difficulty }),
   onRemoveBot: () => net.send({ type: 'removeBot' }),
   onSetMode: (mode) => net.send({ type: 'setMode', mode }),
 });

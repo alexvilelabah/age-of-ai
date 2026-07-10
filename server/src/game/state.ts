@@ -3,6 +3,7 @@
 
 import { UNIT_DEFS } from '@age/shared';
 import type {
+  BotDifficulty,
   BuildingType,
   NodeType,
   ResourceType,
@@ -89,6 +90,8 @@ export interface GamePlayer {
   ageResearch?: { target: number; elapsed: number };
   /** Tecnologias/upgrades já pesquisados. */
   techs: Set<string>;
+  /** Só bots: nível de dificuldade (dirige a IA). Humanos = undefined. */
+  difficulty?: BotDifficulty;
 }
 
 export function createUnit(id: number, owner: number, type: UnitType, x: number, y: number): Unit {
