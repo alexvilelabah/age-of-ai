@@ -21,6 +21,8 @@ export type GameCommand =
   | { kind: 'stop'; unitIds: number[] }
   // apagar as PRÓPRIAS unidades/prédios selecionados (tecla Delete). Sem reembolso (AoE2).
   | { kind: 'delete'; ids: number[] }
+  // reparar um prédio PRÓPRIO pronto e danificado com aldeões (recupera vida gastando recurso)
+  | { kind: 'repair'; unitIds: number[]; targetId: number }
   // targetId: nó de recurso OU fazenda concluída do próprio jogador
   | { kind: 'gather'; unitIds: number[]; targetId: number }
   // colocar um prédio novo, ou (mesmo tile/tipo) designar aldeões a uma obra existente.

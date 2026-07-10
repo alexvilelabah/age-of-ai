@@ -346,6 +346,9 @@ export class Game {
       case 'delete':
         this.cmdDelete(playerId, cmd.ids);
         break;
+      case 'repair':
+        this.cmdRepair(playerId, cmd.unitIds, cmd.targetId);
+        break;
       case 'gather':
         this.cmdGather(playerId, cmd.unitIds, cmd.targetId);
         break;
@@ -541,6 +544,17 @@ export class Game {
         this.retargetAttackersOf(id);
         if (b.type === 'town_center') this.checkTownCenterLoss(playerId);
       }
+    }
+  }
+
+  /** Reparar um prédio PRÓPRIO pronto e danificado com aldeões: reusa o fluxo de
+   *  construção — o updateBuilding detecta prédio pronto+ferido e recupera a vida. */
+  private cmdRepair(playerId: number, unitIds: number[], targetId: number): void {
+    const b = this.buildings.get(targetId);
+    if (!b || b.owner !== playerId || b.progress < 1) return;
+    if (b.hp >= BUILDING_DEFS[b.type].hp) return; // já com vida cheia
+    for (const u of this.ownedUnits(playerId, unitIds)) {
+      if (u.type === 'villager') this.assignBuilder(u, b);
     }
   }
 
@@ -1457,14 +1471,19 @@ export class Game {
 
   private updateBuilding(u: Unit, dt: number): void {
     const b = this.buildings.get(u.buildTargetId ?? -1);
-    if (!b || b.progress >= 1) {
-      // obra terminada (por este ou por outro aldeão): segue pra próxima da fila
+    const def = b ? BUILDING_DEFS[b.type] : undefined;
+    // nada a fazer: obra sumiu, ou está pronta E com vida cheia → segue a fila
+    if (!b || !def || (b.progress >= 1 && b.hp >= def.hp)) {
       u.buildTargetId = undefined;
       if (this.advanceBuildQueue(u)) return;
       u.state = 'idle';
       return;
     }
-    const def = BUILDING_DEFS[b.type];
+    if (b.progress >= 1) {
+      // REPARO: prédio pronto porém danificado — recupera vida gastando recurso.
+      this.repairTick(u, b, dt);
+      return;
+    }
     b.progress = Math.min(1, b.progress + dt / def.buildTime);
     b.hp = Math.round(def.hp * (0.1 + 0.9 * b.progress));
     if (b.progress >= 1) {
@@ -1485,6 +1504,31 @@ export class Game {
       if (this.advanceBuildQueue(u)) return;
       u.state = 'idle';
     }
+  }
+
+  /** Um aldeão consertando um prédio pronto: recupera vida na velocidade de
+   *  construção, gastando 50% do custo da obra proporcional ao HP recuperado.
+   *  Sem recurso pra pagar o próximo tiquinho, para. */
+  private repairTick(u: Unit, b: Building, dt: number): void {
+    const def = BUILDING_DEFS[b.type];
+    const p = this.players.get(u.owner);
+    const gain = Math.min((def.hp / def.buildTime) * dt, def.hp - b.hp);
+    if (!p || gain <= 0) {
+      u.buildTargetId = undefined;
+      if (!this.advanceBuildQueue(u)) u.state = 'idle';
+      return;
+    }
+    const frac = (gain / def.hp) * 0.5; // reparo = metade da obra, proporcional ao HP
+    const entries = Object.entries(def.cost) as [ResourceType, number][];
+    for (const [res, amt] of entries) {
+      if ((p.resources[res] ?? 0) < (amt ?? 0) * frac) {
+        u.state = 'idle';
+        u.buildTargetId = undefined;
+        return;
+      }
+    }
+    for (const [res, amt] of entries) p.resources[res] -= (amt ?? 0) * frac;
+    b.hp = Math.min(def.hp, b.hp + gain);
   }
 
   private updateMovingToAttack(u: Unit, dt: number): void {

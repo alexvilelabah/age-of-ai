@@ -477,6 +477,12 @@ export class GameInput {
             this.cmd({ kind: 'gather', unitIds, targetId: b.id });
             return;
           }
+          // prédio próprio pronto e DANIFICADO + aldeão → reparar (recupera a vida)
+          if (hasVillager && (b.progress ?? 1) >= 1 && b.hp < (BUILDING_DEFS[b.type]?.hp ?? b.hp)) {
+            this.mark('build', w.x, w.y, b.id);
+            this.cmd({ kind: 'repair', unitIds, targetId: b.id });
+            return;
+          }
           // prédio próprio completo sem ação de gather/build: cai para mover
           this.mark('move', w.x, w.y);
           this.cmd({ kind: 'move', unitIds, x: w.x, y: w.y, queue });
