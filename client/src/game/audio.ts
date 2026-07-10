@@ -53,6 +53,7 @@ const SAMPLE_FILES: Record<string, string> = {
   death: 'death.mp3',
   wreck: 'wreck.mp3',
   hit: 'hit.mp3',                          // ex.: choque de espada
+  base_attack: 'base_attack.mp3',
   owl: 'owl.mp3',                          // pio da coruja
   music: 'music.mp3',                      // trilha de fundo (loop) — opcional
 };
@@ -336,6 +337,13 @@ export class Sfx {
     // choque metálico curto (clangor de lâmina)
     this.clink(900, 0.11);
     this.noise(0.035, { filter: 3200, type: 'highpass', gain: 0.12 });
+  }
+
+  baseUnderAttack(): void {
+    if (this.play('base_attack', 0.9)) return;
+    this.tone(740, 0.16, { type: 'triangle', gain: 0.22, glideTo: 560 });
+    this.tone(520, 0.22, { type: 'triangle', gain: 0.24, glideTo: 390, delay: 0.18 });
+    this.tone(690, 0.28, { type: 'triangle', gain: 0.2, glideTo: 430, delay: 0.43 });
   }
 
   /** Pio sem formantes de voz: assobio senoidal com vibrato irregular e ar. */

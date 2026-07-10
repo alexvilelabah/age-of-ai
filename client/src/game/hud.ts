@@ -23,6 +23,7 @@ import {
   TRAIN_QUEUE_MAX,
   UNIT_AGE_REQ,
   UNIT_DEFS,
+  techBonus,
   tradeBuyCost,
   tradeSellGain,
 } from '@age/shared';
@@ -312,10 +313,14 @@ export class Hud {
     let sig = '';
     if (units.length === 1) {
       const u = units[0];
-      sig = `u:${u.id}:${u.hp}:${u.carryType ?? ''}:${u.carryAmount ?? 0}`;
+      const techSig = gs.playerSnaps.get(u.owner)?.techs?.join(',') ?? '';
+      sig = `u:${u.id}:${u.hp}:${u.carryType ?? ''}:${u.carryAmount ?? 0}:${techSig}`;
     } else if (units.length > 1) {
       // inclui a vida de cada um pra grade de retratos atualizar em combate
-      sig = `m:${units.map((u) => `${u.id}=${Math.ceil(u.hp)}`).join(',')}`;
+      const techSig = [...new Set(units.map((u) => u.owner))]
+        .map((owner) => this.gs.playerSnaps.get(owner)?.techs?.join(',') ?? '')
+        .join('|');
+      sig = `m:${units.map((u) => `${u.id}=${Math.ceil(u.hp)}`).join(',')}:${techSig}`;
     } else if (building) {
       sig = `b:${building.id}:${building.hp}:${building.progress}:${building.foodLeft ?? -1}`;
     } else if (node) {
@@ -362,9 +367,14 @@ export class Hud {
   }
 
   private renderUnitDetail(u: UnitSnap): void {
-    const maxHp = UNIT_DEFS[u.type]?.hp ?? u.hp;
+    const def = UNIT_DEFS[u.type];
+    const bonuses = techBonus(this.gs.playerSnaps.get(u.owner)?.techs ?? [], u.type);
+    const maxHp = (def?.hp ?? u.hp) + bonuses.hp;
+    const attack = (def?.attack ?? 0) + bonuses.attack;
+    const armor = bonuses.armor;
     this.selPanel.appendChild(this.titleRow(UNIT_ICONS[u.type] ?? '❔', UNIT_NAMES[u.type] ?? u.type, this.gs.colorOf(u.owner)));
     this.selPanel.appendChild(this.hpBar(u.hp, maxHp));
+    this.selPanel.appendChild(el('div', 'sel-line', `⚔ ${attack}   ❤ ${maxHp}   🛡 ${armor}`));
     if (u.owner !== this.gs.you) {
       this.selPanel.appendChild(el('div', 'sel-line', t('hud.player', { name: this.gs.nameOf(u.owner) })));
     }
@@ -384,7 +394,8 @@ export class Hud {
     for (const u of units.slice(0, MAX_TILES)) {
       const tile = el('div', 'sel-unit');
       tile.appendChild(el('span', 'ico', UNIT_ICONS[u.type] ?? '❔'));
-      const maxHp = UNIT_DEFS[u.type]?.hp ?? u.hp;
+      const bonuses = techBonus(this.gs.playerSnaps.get(u.owner)?.techs ?? [], u.type);
+      const maxHp = (UNIT_DEFS[u.type]?.hp ?? u.hp) + bonuses.hp;
       const frac = maxHp > 0 ? Math.max(0, Math.min(1, u.hp / maxHp)) : 0;
       const bar = el('div', 'mini-hp');
       const fill = el('div', 'fill');

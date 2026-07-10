@@ -15,7 +15,7 @@ export interface InputDeps {
   onCommand: (cmd: GameCommand) => void;
   onBuildCommand: (type: BuildingType, tileX: number, tileY: number, unitIds: number[], queue: boolean) => void;
   onCenterHome: () => void;
-  onIdleVillager: () => void;
+  onIdleVillager: (all?: boolean) => void;
   isChatOpen: () => boolean;
   openChat: () => void;
 }
@@ -261,7 +261,8 @@ export class GameInput {
       return;
     }
     if (e.key === '.') {
-      this.deps.onIdleVillager();
+      e.preventDefault();
+      this.deps.onIdleVillager(e.ctrlKey || e.shiftKey);
       return;
     }
     // Parar (X): interrompe mover/coletar/atacar das unidades selecionadas.

@@ -44,6 +44,7 @@ export class GameScreen {
   private sndTechs = 0;
   private sndUnits = -1;
   private sndCombatAt = 0;
+  private lastBaseAlertAt = -Infinity;
   private nextOwl = 0;
   private nextWorkSound = 0;
   private workListenX = Number.NaN;
@@ -95,7 +96,7 @@ export class GameScreen {
         this.deps.onCommand({ kind: 'build', unitIds, building: type, tileX, tileY, queue });
       },
       onCenterHome: () => this.centerOnHome(),
-      onIdleVillager: () => this.selectNextIdleVillager(),
+      onIdleVillager: (all) => all ? this.selectAllIdleVillagers() : this.selectNextIdleVillager(),
       isChatOpen: () => this.hud.isChatOpen(),
       openChat: () => this.hud.openChat(),
     }, this.sfx);
@@ -190,6 +191,16 @@ export class GameScreen {
     this.sfx.selectUnit('villager');
   }
 
+  private selectAllIdleVillagers(): void {
+    const idle = [...this.state.units.values()]
+      .filter((u) => u.owner === this.state.you && u.type === 'villager' && u.state === 'idle')
+      .sort((a, b) => a.id - b.id);
+    if (idle.length === 0) return;
+    this.state.selection.clear();
+    for (const u of idle) this.state.selection.add(u.id);
+    this.sfx.selectUnit('villager');
+  }
+
   /** Toca sons de eventos detectando mudanças entre snapshots (era, pesquisa,
    *  treino concluído). Comparação barata por frame. */
   private playEventSounds(now: number): void {
@@ -250,6 +261,27 @@ export class GameScreen {
     if (newDeath) this.sfx.death();
     if (newWreck) this.sfx.wreck();
     this.sndCombatAt = performance.now();
+
+    if (now - this.lastBaseAlertAt >= 5000) {
+      for (const [id] of this.state.lastHit) {
+        const u = this.state.units.get(id);
+        const b = this.state.buildings.get(id);
+        if ((!u || u.owner !== this.state.you) && (!b || b.owner !== this.state.you)) continue;
+        let wx: number, wy: number;
+        if (u) {
+          const p = this.state.unitPos(u, now);
+          wx = p.x; wy = p.y;
+        } else if (b) {
+          const size = BUILDING_DEFS[b.type]?.size ?? 1;
+          wx = b.tileX + size / 2; wy = b.tileY + size / 2;
+        } else continue;
+        const s = this.cam.worldToScreen(wx, wy);
+        if (s.x >= 0 && s.y >= 0 && s.x <= this.cam.viewW && s.y <= this.cam.viewH) continue;
+        this.sfx.baseUnderAttack();
+        this.lastBaseAlertAt = now;
+        break;
+      }
+    }
 
     // música de batalha: entra quando EU estou envolvido em combate (minhas
     // unidades atacando, ou minhas unidades/prédios levando dano)
