@@ -18,6 +18,9 @@ interface RoomPlayerState {
   joinOrder: number;
   isBot?: boolean;
   name?: string; // apenas bots (não têm Connection)
+  clientId?: string;   // identidade estável do navegador (p/ reconectar na MESMA partida)
+  disconnected?: boolean; // caiu no meio do jogo e a vaga está reservada (aguardando reconexão)
+  graceTimer?: ReturnType<typeof setTimeout>; // conta o tempo até desistir e derrotar
 }
 
 interface Room {
@@ -30,6 +33,10 @@ interface Room {
 }
 
 const ROOM_ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+/** Quanto tempo a vaga de um jogador fica reservada após ele cair no meio da
+ *  partida — se ele reconectar (mesmo clientId) dentro disso, retoma o jogo de
+ *  onde estava; senão, é dado como derrotado. Ajustável via env (útil em testes). */
+const RECONNECT_GRACE_MS = Number(process.env.RECONNECT_GRACE_MS) || 60_000;
 
 export class Lobby {
   private conns = new Map<number, Connection>();
@@ -46,11 +53,12 @@ export class Lobby {
     return conn;
   }
 
-  disconnect(playerId: number): void {
-    const conn = this.conns.get(playerId);
-    if (!conn) return;
+  disconnect(conn: Connection): void {
+    // Se esta conexão já não é a mapeada para o id (a vaga foi reassumida por uma
+    // reconexão que reusou o mesmo playerId), ignore — não derrube o novo dono.
+    if (this.conns.get(conn.id) !== conn) return;
     if (conn.roomId) this.handleDisconnectFromRoom(conn);
-    this.conns.delete(playerId);
+    if (this.conns.get(conn.id) === conn) this.conns.delete(conn.id);
   }
 
   /** Contagem ao vivo p/ monitorar quem está online (usada no endpoint /status). */
@@ -108,6 +116,18 @@ export class Lobby {
   private setName(conn: Connection, name: string, clientId?: string): void {
     const wanted = name.trim().slice(0, 20) || `Jogador ${conn.id}`;
     if (clientId) conn.clientId = clientId;
+
+    // RECONEXÃO NA MESMA PARTIDA: se este clientId tem uma vaga ativa num jogo em
+    // andamento (caiu e voltou dentro do tempo), retoma de onde estava em vez de
+    // criar um jogador novo no lobby.
+    if (clientId) {
+      const resume = this.findResumableGame(clientId, conn.id);
+      if (resume) {
+        this.resumeGame(conn, resume.room, resume.member, wanted);
+        return;
+      }
+    }
+
     // nome já em uso por OUTRA conexão viva (ignora maiúsc/minúsc)?
     let holder: Connection | undefined;
     for (const c of this.conns.values()) {
@@ -117,10 +137,10 @@ export class Lobby {
       }
     }
     if (holder) {
-      // Mesmo clientId = é o MESMO usuário reconectando (refresh/queda): despeja a
-      // conexão antiga (libera o nome e limpa a sala/partida dela) e deixa esta assumir.
+      // Mesmo clientId = é o MESMO usuário reconectando (refresh/queda) no lobby/sala:
+      // despeja a conexão antiga (libera o nome e a sala dela) e deixa esta assumir.
       if (clientId && holder.clientId === clientId) {
-        this.disconnect(holder.id);
+        this.disconnect(holder);
       } else {
         conn.send({ type: 'nameTaken' });
         return;
@@ -129,6 +149,51 @@ export class Lobby {
     conn.name = wanted;
     conn.send({ type: 'nameOk' });
     if (conn.roomId) this.broadcastRoomState(conn.roomId);
+  }
+
+  /** Procura, entre as salas EM JOGO, uma vaga deste clientId cujo jogador ainda
+   *  esteja vivo (não derrotado) — a partida que ele pode retomar. */
+  private findResumableGame(clientId: string, excludeId: number): { room: Room; member: RoomPlayerState } | null {
+    for (const room of this.rooms.values()) {
+      if (!room.inGame || !room.game) continue;
+      for (const m of room.members.values()) {
+        if (m.isBot || m.id === excludeId || m.clientId !== clientId) continue;
+        const gp = room.game.players.get(m.id);
+        if (!gp || gp.defeated) continue; // já perdeu enquanto estava fora → não retoma
+        return { room, member: m };
+      }
+    }
+    return null;
+  }
+
+  /** Reconecta `conn` à vaga `member` de uma partida em andamento: reassume o
+   *  playerId antigo (pra toda a engrenagem — conns/jogo/sala — continuar valendo)
+   *  e reenvia identidade + gameStart; os snapshots voltam a fluir sozinhos. */
+  private resumeGame(conn: Connection, room: Room, member: RoomPlayerState, wanted: string): void {
+    const oldId = member.id;
+    if (member.graceTimer) {
+      clearTimeout(member.graceTimer);
+      member.graceTimer = undefined;
+    }
+    member.disconnected = false;
+    // se ainda houver uma conexão viva ocupando a vaga (reabertura rápida), solta-a
+    const stale = this.conns.get(oldId);
+    if (stale && stale !== conn) {
+      stale.roomId = null;
+      this.conns.delete(oldId);
+    }
+    // reassume o id antigo do jogo
+    this.conns.delete(conn.id);
+    conn.id = oldId;
+    conn.roomId = room.id;
+    conn.name = wanted;
+    this.conns.set(oldId, conn);
+    // reenvia identidade + a partida em andamento (o cliente remonta a tela de jogo)
+    conn.send({ type: 'welcome', playerId: oldId });
+    conn.send({ type: 'nameOk' });
+    if (room.game) {
+      conn.send({ type: 'gameStart', map: room.game.map, players: room.game.toPlayerInfos(), you: oldId });
+    }
   }
 
   // ---------------- Salas ----------------
@@ -238,11 +303,22 @@ export class Lobby {
       return;
     }
     if (room.inGame && room.game) {
-      // markDefeated pode ENCERRAR a partida na hora (se sobrar 1 jogador):
-      // isso dispara onGameOver, que zera room.game. Por isso todo acesso a
-      // room.game depois daqui é reguardado.
+      const member = room.members.get(conn.id);
+      const gp = room.game.players.get(conn.id);
+      // RESUMÍVEL: humano com clientId e ainda vivo → reserva a vaga por um tempo
+      // (grace) em vez de derrotar. Suas unidades ficam paradas (vulneráveis) e,
+      // se ele reconectar dentro do prazo, retoma a MESMA partida. Ver resumeGame.
+      if (member && !member.isBot && conn.clientId && gp && !gp.defeated) {
+        member.clientId = conn.clientId;
+        member.disconnected = true;
+        if (member.graceTimer) clearTimeout(member.graceTimer);
+        member.graceTimer = setTimeout(() => this.expireGrace(roomId, conn.id), RECONNECT_GRACE_MS);
+        conn.roomId = null;
+        return;
+      }
+      // Fallback (sem clientId / bot / já derrotado): derrota imediata.
+      // markDefeated pode ENCERRAR a partida (checkVictory→onGameOver zera room.game).
       room.game.markDefeated(conn.id);
-      // se não sobrou nenhum humano conectado, encerra e remove a sala
       const anotherHuman = [...room.members.values()].some(
         (m) => m.id !== conn.id && !m.isBot && this.conns.has(m.id),
       );
@@ -255,6 +331,36 @@ export class Lobby {
       return;
     }
     this.removeFromRoom(conn, roomId);
+  }
+
+  /** Passou o tempo de tolerância sem o jogador reconectar: agora sim ele é dado
+   *  como derrotado e a vaga liberada (mesma limpeza da desconexão imediata). */
+  private expireGrace(roomId: string, playerId: number): void {
+    const room = this.rooms.get(roomId);
+    if (!room || !room.game) return;
+    const member = room.members.get(playerId);
+    if (!member || !member.disconnected) return; // já reconectou ou já saiu
+    member.graceTimer = undefined;
+    room.game.markDefeated(playerId); // pode encerrar a partida (onGameOver zera room.game)
+    room.members.delete(playerId);
+    const anyHuman = [...room.members.values()].some((m) => !m.isBot && this.conns.has(m.id));
+    if (!anyHuman) {
+      if (room.game) room.game.stop();
+      this.rooms.delete(roomId);
+      this.broadcastRoomListToLobbyClients();
+      return;
+    }
+    // migra o host se quem saiu era ele
+    if (room.hostId === playerId) {
+      let oldest: RoomPlayerState | null = null;
+      for (const m of room.members.values()) {
+        if (m.isBot) continue;
+        if (!oldest || m.joinOrder < oldest.joinOrder) oldest = m;
+      }
+      if (oldest) room.hostId = oldest.id;
+    }
+    this.broadcastRoomState(roomId); // se a partida acabou, o room voltou pro lobby
+    this.broadcastRoomListToLobbyClients();
   }
 
   private setReady(conn: Connection, ready: boolean): void {
@@ -326,6 +432,10 @@ export class Lobby {
     }
 
     const orderedMembers = [...room.members.values()].sort((a, b) => a.joinOrder - b.joinOrder);
+    // grava o clientId de cada humano na vaga — é a chave pra reconectar na partida
+    for (const m of orderedMembers) {
+      if (!m.isBot) m.clientId = this.conns.get(m.id)?.clientId;
+    }
     const gameMembers: RoomMember[] = orderedMembers.map((m, i) => {
       const c = this.conns.get(m.id);
       return {

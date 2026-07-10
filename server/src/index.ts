@@ -127,7 +127,7 @@ wss.on('connection', (ws: WebSocket) => {
 
   ws.on('close', () => {
     try {
-      lobby.disconnect(conn.id);
+      lobby.disconnect(conn);
     } catch (err) {
       console.error('[ws] erro no cleanup de desconexão', err);
     }
