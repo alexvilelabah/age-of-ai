@@ -180,7 +180,8 @@ export class GameInput {
         this.ui.wallDrag = null;
         return;
       }
-      this.handleRightClick(pos);
+      // Shift: adiciona WAYPOINT (fila de destinos) em vez de substituir a ordem
+      this.handleRightClick(pos, e.shiftKey);
     }
   };
 
@@ -261,6 +262,28 @@ export class GameInput {
     }
     if (e.key === '.') {
       this.deps.onIdleVillager();
+      return;
+    }
+    // Parar (X): interrompe mover/coletar/atacar das unidades selecionadas.
+    // (o 'S' já é a câmera; por isso X.)
+    if (e.key === 'x' || e.key === 'X') {
+      const ids = this.gs.selectedOwnUnits().map((u) => u.id);
+      if (ids.length) {
+        this.deps.onCommand({ kind: 'stop', unitIds: ids });
+        this.sfx.uiClick();
+      }
+      return;
+    }
+    // Apagar (Delete): remove as próprias unidades/prédio selecionados.
+    if (e.key === 'Delete') {
+      const ids = this.gs.selectedOwnUnits().map((u) => u.id);
+      const b = this.gs.selectedBuilding();
+      if (b && b.owner === this.gs.you) ids.push(b.id);
+      if (ids.length) {
+        this.deps.onCommand({ kind: 'delete', ids });
+        this.gs.selection.clear();
+        this.sfx.wreck(); // som de destruição
+      }
       return;
     }
     // grupos de controle: Ctrl+1..9 salva a seleção; 1..9 seleciona o grupo;
@@ -425,7 +448,7 @@ export class GameInput {
     if (this.ui.orders.length > 10) this.ui.orders.shift();
   }
 
-  private handleRightClick(pos: { x: number; y: number }): void {
+  private handleRightClick(pos: { x: number; y: number }, queue = false): void {
     const w = this.cam.screenToWorld(pos.x, pos.y);
     const ownUnits = this.gs.selectedOwnUnits();
 
@@ -456,7 +479,7 @@ export class GameInput {
           }
           // prédio próprio completo sem ação de gather/build: cai para mover
           this.mark('move', w.x, w.y);
-          this.cmd({ kind: 'move', unitIds, x: w.x, y: w.y });
+          this.cmd({ kind: 'move', unitIds, x: w.x, y: w.y, queue });
           return;
         }
         // prédio inimigo
@@ -472,11 +495,11 @@ export class GameInput {
         }
         // unidade própria sob o cursor: move até a posição (comportamento simples)
         this.mark('move', w.x, w.y);
-        this.cmd({ kind: 'move', unitIds, x: w.x, y: w.y });
+        this.cmd({ kind: 'move', unitIds, x: w.x, y: w.y, queue });
         return;
       }
       this.mark('move', w.x, w.y);
-      this.cmd({ kind: 'move', unitIds, x: w.x, y: w.y });
+      this.cmd({ kind: 'move', unitIds, x: w.x, y: w.y, queue });
       return;
     }
 

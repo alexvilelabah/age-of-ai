@@ -16,8 +16,11 @@ import type {
 // ---------- Cliente -> Servidor ----------
 
 export type GameCommand =
-  | { kind: 'move'; unitIds: number[]; x: number; y: number }
+  // queue=true (Shift): adiciona um WAYPOINT em vez de substituir o destino atual.
+  | { kind: 'move'; unitIds: number[]; x: number; y: number; queue?: boolean }
   | { kind: 'stop'; unitIds: number[] }
+  // apagar as PRÓPRIAS unidades/prédios selecionados (tecla Delete). Sem reembolso (AoE2).
+  | { kind: 'delete'; ids: number[] }
   // targetId: nó de recurso OU fazenda concluída do próprio jogador
   | { kind: 'gather'; unitIds: number[]; targetId: number }
   // colocar um prédio novo, ou (mesmo tile/tipo) designar aldeões a uma obra existente.

@@ -338,10 +338,13 @@ export class Game {
   private applyCommand(playerId: number, cmd: GameCommand): void {
     switch (cmd.kind) {
       case 'move':
-        this.cmdMove(playerId, cmd.unitIds, cmd.x, cmd.y);
+        this.cmdMove(playerId, cmd.unitIds, cmd.x, cmd.y, cmd.queue ?? false);
         break;
       case 'stop':
         this.cmdStop(playerId, cmd.unitIds);
+        break;
+      case 'delete':
+        this.cmdDelete(playerId, cmd.ids);
         break;
       case 'gather':
         this.cmdGather(playerId, cmd.unitIds, cmd.targetId);
@@ -494,15 +497,22 @@ export class Game {
     return out;
   }
 
-  private cmdMove(playerId: number, unitIds: number[], x: number, y: number): void {
+  private cmdMove(playerId: number, unitIds: number[], x: number, y: number, queue = false): void {
     const units = this.ownedUnits(playerId, unitIds);
     if (units.length === 0) return;
     const spots = collectSpreadTiles(this.grid, Math.round(x), Math.round(y), Math.max(units.length, 1));
     units.forEach((u, i) => {
       const target = spots[i] ?? spots[spots.length - 1] ?? { x: Math.round(x), y: Math.round(y) };
-      this.clearTasks(u);
-      this.pathUnitTo(u, target.x + 0.5, target.y + 0.5);
-      u.state = u.path.length > 0 ? 'moving' : 'idle';
+      const wx = target.x + 0.5;
+      const wy = target.y + 0.5;
+      // Shift (queue) e já se movendo: ENFILEIRA o waypoint (segue depois de chegar).
+      if (queue && (u.state === 'moving' || (u.moveQueue?.length ?? 0) > 0)) {
+        (u.moveQueue ??= []).push({ x: wx, y: wy });
+      } else {
+        this.clearTasks(u); // zera tarefas E a fila de waypoints
+        this.pathUnitTo(u, wx, wy);
+        u.state = u.path.length > 0 ? 'moving' : 'idle';
+      }
     });
   }
 
@@ -513,8 +523,30 @@ export class Game {
     }
   }
 
+  /** Apaga as PRÓPRIAS unidades/prédios selecionados (tecla Delete). Sem reembolso,
+   *  igual ao Age of Empires — só remove e libera o espaço. Apagar o último Centro
+   *  da Cidade conta como derrota. */
+  private cmdDelete(playerId: number, ids: number[]): void {
+    for (const id of ids) {
+      const u = this.units.get(id);
+      if (u && u.owner === playerId) {
+        this.units.delete(id);
+        this.retargetAttackersOf(id);
+        continue;
+      }
+      const b = this.buildings.get(id);
+      if (b && b.owner === playerId) {
+        this.unblockFootprint(b.tileX, b.tileY, BUILDING_DEFS[b.type].size);
+        this.buildings.delete(id);
+        this.retargetAttackersOf(id);
+        if (b.type === 'town_center') this.checkTownCenterLoss(playerId);
+      }
+    }
+  }
+
   private clearTasks(u: Unit): void {
     u.path = [];
+    u.moveQueue = [];
     u.gatherTargetId = undefined;
     u.gatherResource = undefined;
     u.dropOffId = undefined;
@@ -1020,7 +1052,16 @@ export class Game {
         break;
       case 'moving':
         this.advanceAlongPath(u, dt);
-        if (u.path.length === 0) u.state = 'idle';
+        if (u.path.length === 0) {
+          // chegou: se há waypoints enfileirados (Shift+clique), segue pro próximo
+          const next = u.moveQueue?.shift();
+          if (next) {
+            this.pathUnitTo(u, next.x, next.y);
+            if (u.path.length === 0) u.state = 'idle'; // waypoint inalcançável
+          } else {
+            u.state = 'idle';
+          }
+        }
         break;
       case 'movingToGather':
         this.updateMovingToGather(u, dt);

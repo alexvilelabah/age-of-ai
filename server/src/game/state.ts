@@ -26,6 +26,9 @@ export interface Unit {
   hp: number;
   state: UnitState;
   path: Waypoint[];
+  /** Waypoints enfileirados (Shift+clique direito): destinos a seguir em sequência
+   *  depois de chegar no atual. */
+  moveQueue?: Waypoint[];
   carryType?: ResourceType;
   carryAmount: number;
   gatherTargetId?: number; // nó ou fazenda sendo coletada
