@@ -153,12 +153,6 @@ export class GameScreen {
       this.canvas.style.width = `${w}px`;
       this.canvas.style.height = `${h}px`;
       this.cam.setViewport(w, h);
-      // Bordas cobertas pelo HUD (topo + barra de comando): a rolagem pela borda
-      // usa isso pra disparar ACIMA da barra, não no fundo escondido da janela.
-      const topBar = this.hud?.el.querySelector('.hud-top') as HTMLElement | null;
-      const cmdBar = this.hud?.el.querySelector('.command-bar') as HTMLElement | null;
-      this.cam.topInset = topBar?.offsetHeight ?? 0;
-      this.cam.bottomInset = cmdBar?.offsetHeight ?? 0;
     };
     resize();
     // no construtor o elemento ainda não está no DOM (mede 0x0) — remede após o mount

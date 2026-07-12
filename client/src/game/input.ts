@@ -65,12 +65,12 @@ export class GameInput {
     c.addEventListener('mousedown', this.onMouseDown);
     window.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('mouseup', this.onMouseUp);
+    c.addEventListener('mouseleave', () => {
+      this.ui.hasMouse = false;
+    });
     c.addEventListener('mouseenter', () => {
       this.ui.hasMouse = true;
     });
-    // Só desliga a rolagem de borda quando o cursor SAI DA JANELA (document),
-    // não quando passa sobre o HUD — senão a rolagem morria perto das barras.
-    document.addEventListener('mouseleave', this.onDocMouseLeave);
     // duplo clique numa unidade própria: seleciona todas do mesmo tipo na tela (AoE2)
     c.addEventListener('dblclick', (e) => {
       if (this.deps.isChatOpen() || this.ui.placement) return;
@@ -86,11 +86,7 @@ export class GameInput {
     this.mmDragging = false;
     this.leftDown = false;
     this.dragSelecting = false;
-    this.ui.hasMouse = false; // perdeu o foco: para a rolagem de borda
-  };
-
-  private onDocMouseLeave = (): void => {
-    this.ui.hasMouse = false;
+    this.ui.hasMouse = false; // perdeu o foco (alt-tab): para a rolagem de borda
   };
 
   destroy(): void {
@@ -99,7 +95,6 @@ export class GameInput {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
-    document.removeEventListener('mouseleave', this.onDocMouseLeave);
   }
 
   /** Chamado a cada frame para aplicar o pan por teclado. */
@@ -126,17 +121,17 @@ export class GameInput {
     }
 
     // rolagem pela borda da tela (estilo AoE2): a câmera anda no sentido da
-    // borda onde o mouse encosta. Cima/baixo respeitam as barras do HUD: a zona
-    // de baixo dispara logo ACIMA da barra de comando (e segue valendo por cima
-    // dela) — antes ficava enterrada no fundo da janela e não rolava nada.
-    // Desligada durante seleção (botão esquerdo) e arrasto do meio.
+    // borda onde o mouse encosta — as QUATRO bordas ABSOLUTAS da janela, como
+    // no jogo original (a de baixo dispara no fundo da tela, mesmo sobre o
+    // menu; o MIOLO do menu/minimapa não rola porque não é borda). Desligada
+    // durante seleção (botão esquerdo) e arrasto do meio.
     if (this.ui.hasMouse && !this.leftDown && !this.mmDragging) {
       let ex = 0;
       let ey = 0;
       if (this.ui.mouseX < EDGE_MARGIN) ex = -1;
       else if (this.ui.mouseX > this.cam.viewW - EDGE_MARGIN) ex = 1;
-      if (this.ui.mouseY < this.cam.topInset + EDGE_MARGIN) ey = -1;
-      else if (this.ui.mouseY > this.cam.viewH - this.cam.bottomInset - EDGE_MARGIN) ey = 1;
+      if (this.ui.mouseY < EDGE_MARGIN) ey = -1;
+      else if (this.ui.mouseY > this.cam.viewH - EDGE_MARGIN) ey = 1;
       if (ex !== 0 || ey !== 0) {
         // panPx move o CONTEÚDO; para a câmera ir no sentido da borda, o
         // conteúdo desliza pro lado oposto — daí o sinal negativo.
