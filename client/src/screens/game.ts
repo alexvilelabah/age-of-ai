@@ -20,6 +20,7 @@ export interface GameScreenDeps {
   onCommand: (cmd: GameCommand) => void;
   onChat: (text: string) => void;
   onTogglePause: () => void;
+  onPing: (x: number, y: number) => void;
   onBackToLobby: () => void;
 }
 
@@ -85,7 +86,13 @@ export class GameScreen {
     this.createHud();
     root.appendChild(this.hud.el);
 
-    this.minimap = new Minimap(gs, this.cam, (wx, wy, queue) => this.input.orderMoveTo(wx, wy, queue));
+    this.minimap = new Minimap(gs, this.cam, {
+      onOrderMove: (wx, wy, queue) => this.input.orderMoveTo(wx, wy, queue),
+      onSelectArmy: () => this.selectAllMilitary(),
+      onCenterHome: () => this.centerOnHome(),
+      onIdleVillager: () => this.selectNextIdleVillager(),
+      onPing: (wx, wy) => this.deps.onPing(wx, wy),
+    });
     this.hud.minimapSlot.appendChild(this.minimap.el);
 
     this.connLost = new ConnLostOverlay({ onBackToLobby: () => this.deps.onBackToLobby() });
@@ -211,6 +218,17 @@ export class GameScreen {
     const p = gs.unitPos(u, performance.now());
     this.cam.centerOn(p.x, p.y);
     this.sfx.selectUnit('villager');
+  }
+
+  /** Reunir o exército: seleciona toda a tropa militar própria (não-aldeões). */
+  private selectAllMilitary(): void {
+    const army = [...this.state.units.values()]
+      .filter((u) => u.owner === this.state.you && u.type !== 'villager')
+      .sort((a, b) => a.id - b.id);
+    if (army.length === 0) return;
+    this.state.selection.clear();
+    for (const u of army) this.state.selection.add(u.id);
+    this.sfx.selectUnit(army[0].type);
   }
 
   private selectAllIdleVillagers(): void {

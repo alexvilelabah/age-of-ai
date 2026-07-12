@@ -71,6 +71,8 @@ export class GameState {
   removedNodes: { node: NodeSnap; at: number }[] = [];
   /** Ovelhas que sumiram (comidas) — para o "poof". */
   removedSheep: { sheep: SheepSnap; at: number }[] = [];
+  /** Sinalizações (ping) recebidas de aliados — anel pulsante no minimapa. */
+  pings: { x: number; y: number; at: number; color: string }[] = [];
   /** Números de dano flutuantes (x,y em tile; quantidade; timestamp ms). */
   hits: { x: number; y: number; amount: number; at: number }[] = [];
   /** id -> timestamp do último dano recebido (para o flash de impacto). */

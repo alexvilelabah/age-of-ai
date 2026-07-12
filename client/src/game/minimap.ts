@@ -4,6 +4,7 @@
 // clique/arrasto move a câmera.
 
 import { BUILDING_DEFS, TILE_WATER } from '@age/shared';
+import { t } from '../i18n';
 import type { GameState } from '../state';
 import { el } from '../ui';
 import type { Camera } from './camera';
@@ -17,6 +18,20 @@ const HWm = MINI_W / 2 - MARGIN; // meia-largura do losango
 const HHm = MINI_H / 2 - MARGIN; // meia-altura do losango
 const CXM = MINI_W / 2;
 const CYM = MINI_H / 2;
+const PING_MS = 2500; // duração do anel de ping no minimapa
+
+export interface MinimapDeps {
+  /** Botão direito no minimapa: manda a seleção pra lá. */
+  onOrderMove?: (worldX: number, worldY: number, queue?: boolean) => void;
+  /** Canto ⚔: reunir todo o exército. */
+  onSelectArmy?: () => void;
+  /** Canto 🏠: centralizar na base (Centro da Cidade). */
+  onCenterHome?: () => void;
+  /** Canto 👷: selecionar o próximo aldeão ocioso. */
+  onIdleVillager?: () => void;
+  /** Canto 🚩: sinalizar (ping) um ponto pros aliados. */
+  onPing?: (worldX: number, worldY: number) => void;
+}
 
 export class Minimap {
   readonly el: HTMLElement;
@@ -24,6 +39,8 @@ export class Minimap {
   private ctx: CanvasRenderingContext2D | null;
   private terrain: HTMLCanvasElement;
   private dragging = false;
+  private pingMode = false;
+  private pingBtn: HTMLButtonElement | null = null;
   private onWinMove = (e: MouseEvent): void => {
     if (this.dragging) this.jump(e);
   };
@@ -34,7 +51,7 @@ export class Minimap {
   constructor(
     private gs: GameState,
     private cam: Camera,
-    private onOrderMove?: (worldX: number, worldY: number, queue?: boolean) => void,
+    private deps: MinimapDeps = {},
   ) {
     this.el = el('div', 'minimap-wrap');
     this.canvas = el('canvas');
@@ -48,22 +65,59 @@ export class Minimap {
     this.ctx = this.canvas.getContext('2d');
     this.terrain = this.buildTerrain();
 
+    this.buildCornerButtons();
+
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     this.canvas.addEventListener('mousedown', (e) => {
       if (e.button === 0) {
-        // esquerdo: leva a câmera pra lá (arrasto move junto)
         e.preventDefault();
+        if (this.pingMode) {
+          // modo ping ligado: o clique esquerdo sinaliza o ponto pros aliados
+          const w = this.eventToWorld(e);
+          if (w) this.deps.onPing?.(w.x, w.y);
+          this.setPingMode(false);
+          return;
+        }
+        // esquerdo: leva a câmera pra lá (arrasto move junto)
         this.dragging = true;
         this.jump(e);
       } else if (e.button === 2) {
         // direito: manda as unidades selecionadas pra lá (estilo AoE)
         e.preventDefault();
         const w = this.eventToWorld(e);
-        if (w) this.onOrderMove?.(w.x, w.y, e.shiftKey);
+        if (w) this.deps.onOrderMove?.(w.x, w.y, e.shiftKey);
       }
     });
     window.addEventListener('mousemove', this.onWinMove);
     window.addEventListener('mouseup', this.onWinUp);
+  }
+
+  /** 4 atalhos nos cantos triangulares vazios do quadro (estilo AoE). */
+  private buildCornerButtons(): void {
+    const make = (cls: string, icon: string, title: string, onClick: () => void): HTMLButtonElement => {
+      const b = el('button', `mini-corner ${cls}`) as HTMLButtonElement;
+      b.type = 'button';
+      b.textContent = icon;
+      b.title = title;
+      // não deixa o clique no botão virar jump/ping no canvas
+      b.addEventListener('mousedown', (e) => e.stopPropagation());
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        onClick();
+      });
+      this.el.appendChild(b);
+      return b;
+    };
+    make('tl', '⚔', t('mini.army'), () => this.deps.onSelectArmy?.());
+    make('tr', '👷', t('mini.idle'), () => this.deps.onIdleVillager?.());
+    make('bl', '🏠', t('mini.base'), () => this.deps.onCenterHome?.());
+    this.pingBtn = make('br', '🚩', t('mini.ping'), () => this.setPingMode(!this.pingMode));
+  }
+
+  private setPingMode(on: boolean): void {
+    this.pingMode = on;
+    this.pingBtn?.classList.toggle('active', on);
+    this.canvas.style.cursor = on ? 'crosshair' : '';
   }
 
   destroy(): void {
@@ -192,5 +246,26 @@ export class Minimap {
     });
     ctx.closePath();
     ctx.stroke();
+
+    // --- pings dos aliados: anel que expande e some (~2.5s), na cor do dono ---
+    const pings = this.gs.pings;
+    if (pings.length) {
+      for (const ping of pings) {
+        const k = (now - ping.at) / PING_MS; // 0..1
+        if (k < 0 || k > 1) continue;
+        const p = this.project(ping.x, ping.y);
+        ctx.globalAlpha = 1 - k;
+        ctx.strokeStyle = ping.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3 + k * 12, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      // poda os que já sumiram (a lista só cresce por cliques manuais)
+      if (pings.some((pg) => now - pg.at > PING_MS)) {
+        this.gs.pings = pings.filter((pg) => now - pg.at <= PING_MS);
+      }
+    }
   }
 }

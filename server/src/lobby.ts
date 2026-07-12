@@ -148,6 +148,9 @@ export class Lobby {
       case 'setPause':
         this.setPause(conn, msg.paused);
         break;
+      case 'ping':
+        this.ping(conn, msg.x, msg.y);
+        break;
       case 'cmd':
         this.cmd(conn, msg);
         break;
@@ -600,6 +603,14 @@ export class Lobby {
     const room = this.rooms.get(conn.roomId);
     if (!room || !room.inGame || !room.game) return;
     room.game.setPaused(conn.id, paused);
+  }
+
+  /** Sinaliza (ping) no minimapa — o Game repassa só aos aliados. */
+  private ping(conn: Connection, x: number, y: number): void {
+    if (!conn.roomId) return;
+    const room = this.rooms.get(conn.roomId);
+    if (!room || !room.inGame || !room.game) return;
+    room.game.signalPing(conn.id, x, y);
   }
 
   // ---------------- Room list / state broadcasts ----------------

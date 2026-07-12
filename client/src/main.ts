@@ -246,6 +246,7 @@ function dispatch(msg: ServerMessage): void {
         onCommand: (cmd: GameCommand) => net.send({ type: 'cmd', cmd }),
         onChat: (text) => net.send({ type: 'chat', text }),
         onTogglePause: () => net.send({ type: 'setPause', paused: !gamePaused }),
+        onPing: (x, y) => net.send({ type: 'ping', x, y }),
         onBackToLobby: () => {
           teardownGame();
           showScreen('lobby');
@@ -258,6 +259,10 @@ function dispatch(msg: ServerMessage): void {
     case 'gamePaused': {
       gamePaused = msg.paused;
       gameScreen?.setPaused(msg.paused, msg.by);
+      break;
+    }
+    case 'ping': {
+      gameScreen?.state.pings.push({ x: msg.x, y: msg.y, at: performance.now(), color: msg.color });
       break;
     }
     case 'snapshot': {

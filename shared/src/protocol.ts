@@ -69,6 +69,7 @@ export type ClientMessage =
   | { type: 'startGame' } // apenas host
   | { type: 'chat'; text: string }
   | { type: 'setPause'; paused: boolean } // pausar/despausar a partida (qualquer jogador, tecla P)
+  | { type: 'ping'; x: number; y: number } // sinaliza um ponto no minimapa (só aliados veem)
   | { type: 'cmd'; cmd: GameCommand };
 
 // ---------- Servidor -> Cliente ----------
@@ -119,4 +120,6 @@ export type ServerMessage =
   // `won` (opcional) diz se VOCÊ venceu — necessário em times (vitória em dupla).
   | { type: 'gameOver'; winner: number; winnerName: string; won?: boolean }
   // Partida pausada/retomada (para TODOS da sala). `by` = quem mexeu (mostra na tela).
-  | { type: 'gamePaused'; paused: boolean; by: string };
+  | { type: 'gamePaused'; paused: boolean; by: string }
+  // Sinalização no minimapa (só chega aos ALIADOS do autor). `color` = cor do autor.
+  | { type: 'ping'; x: number; y: number; color: string };

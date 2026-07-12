@@ -200,6 +200,18 @@ export class Game {
     return this.tick;
   }
 
+  /** Sinaliza (ping) um ponto do mapa — só os ALIADOS do autor recebem (inclui
+   *  o próprio; em FFA cai só nele mesmo). Usa a cor do autor no marcador. */
+  signalPing(playerId: number, x: number, y: number): void {
+    const author = this.players.get(playerId);
+    if (!author || this.ended) return;
+    const n = this.grid.size;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= n || y >= n) return;
+    for (const p of this.players.values()) {
+      if (this.allied(playerId, p.id)) this.send(p.id, { type: 'ping', x, y, color: author.color });
+    }
+  }
+
   /** Marca um jogador como derrotado (desconexão) e remove suas entidades. */
   markDefeated(playerId: number): void {
     const p = this.players.get(playerId);

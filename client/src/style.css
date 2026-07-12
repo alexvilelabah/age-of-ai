@@ -419,8 +419,42 @@ input.txt:focus { border-color: var(--gold); }
 
 .minimap-wrap {
   line-height: 0;
+  position: relative; /* âncora dos atalhos de canto */
 }
 #minimap { display: block; cursor: pointer; }
+
+/* Atalhos nos cantos triangulares vazios do minimapa (estilo AoE). */
+.mini-corner {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  color: #f0e6d2;
+  background: rgba(24, 18, 11, 0.72);
+  border: 1px solid rgba(217, 169, 65, 0.55);
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  z-index: 3;
+  transition: background 0.1s, border-color 0.1s;
+}
+.mini-corner:hover {
+  background: rgba(58, 44, 25, 0.92);
+  border-color: #f0c869;
+}
+.mini-corner.active {
+  background: rgba(163, 47, 47, 0.85);
+  border-color: #ffcf6b;
+}
+.mini-corner.tl { top: 1px; left: 1px; }
+.mini-corner.tr { top: 1px; right: 1px; }
+.mini-corner.bl { bottom: 1px; left: 1px; }
+.mini-corner.br { bottom: 1px; right: 1px; }
 
 /* Overlay de PAUSA (aparece pra todos da sala; visual, o bloqueio é no input). */
 .pause-overlay {
