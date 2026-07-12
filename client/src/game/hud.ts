@@ -6,6 +6,7 @@ import type {
   BuildingType,
   NodeSnap,
   ResourceType,
+  SheepSnap,
   TechDef,
   UnitSnap,
   UnitType,
@@ -19,6 +20,7 @@ import {
   MAX_AGE,
   NODE_DEFS,
   POP_CAP_MAX,
+  SHEEP_FOOD,
   TECH_DEFS,
   TRADE_LOT,
   TRAIN_QUEUE_MAX,
@@ -310,6 +312,7 @@ export class Hud {
     }
     const building = gs.selectedBuilding();
     const node = gs.selectedNode();
+    const sheep = gs.selectedSheep();
 
     let sig = '';
     if (units.length === 1) {
@@ -326,6 +329,8 @@ export class Hud {
       sig = `b:${building.id}:${building.hp}:${building.progress}:${building.foodLeft ?? -1}`;
     } else if (node) {
       sig = `n:${node.id}:${node.amount}`;
+    } else if (sheep) {
+      sig = `s:${sheep.id}:${Math.ceil(sheep.food)}:${sheep.owner}`;
     }
 
     if (sig === this.selSig) return;
@@ -341,6 +346,7 @@ export class Hud {
     else if (units.length > 1) this.renderMultiUnits(units);
     else if (building) this.renderBuildingDetail(building);
     else if (node) this.renderNodeDetail(node);
+    else if (sheep) this.renderSheepDetail(sheep);
   }
 
   private titleRow(icon: string, name: string, color?: string): HTMLElement {
@@ -451,6 +457,14 @@ export class Hud {
     );
   }
 
+  private renderSheepDetail(s: SheepSnap): void {
+    const owner = this.gs.isWildSheep(s) ? undefined : this.gs.colorOf(s.owner);
+    this.selPanel.appendChild(this.titleRow('🐑', t('sheep.name'), owner));
+    this.selPanel.appendChild(
+      el('div', 'sel-line', t('hud.remaining', { amt: Math.ceil(s.food), total: SHEEP_FOOD, icon: '🍖' })),
+    );
+  }
+
   // ---------------------------------------------------------------- ações
 
   private actionsContext(): { key: string; building?: BuildingSnap } {
@@ -473,6 +487,7 @@ export class Hud {
     if (b) return { key: 'hint:enemy' };
 
     if (gs.selectedNode()) return { key: 'hint:node' };
+    if (gs.selectedSheep()) return { key: 'hint:sheep' };
 
     // unidade inimiga selecionada para info
     for (const id of gs.selection) {

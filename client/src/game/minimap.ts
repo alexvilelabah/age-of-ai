@@ -156,6 +156,11 @@ export class Minimap {
       ctx.fillStyle = this.gs.colorOf(u.owner);
       ctx.fillRect(p.x - 1.4, p.y - 1.4, 2.8, 2.8);
     }
+    for (const s of this.gs.sheep.values()) {
+      const p = this.project(s.x, s.y);
+      ctx.fillStyle = this.gs.isWildSheep(s) ? '#f4f2ee' : this.gs.colorOf(s.owner);
+      ctx.fillRect(p.x - 1.2, p.y - 1.2, 2.4, 2.4);
+    }
 
     // --- borda do losango ---
     const top = this.project(0, 0), right = this.project(n, 0);

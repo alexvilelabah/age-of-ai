@@ -35,6 +35,11 @@ export class Camera {
   /** Tamanho da viewport em pixels CSS. */
   viewW = 1;
   viewH = 1;
+  /** Altura (px CSS) das barras do HUD que cobrem o topo/base do canvas.
+   *  Usado pela rolagem de borda: a borda de baixo dispara ACIMA da barra de
+   *  comando (senão empurrar pro fundo do campo não rolava nada). */
+  topInset = 0;
+  bottomInset = 0;
 
   constructor(private mapSize: number) {
     this.x = mapSize / 2;

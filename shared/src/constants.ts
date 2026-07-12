@@ -20,7 +20,8 @@ export const TILE_WATER = 1;
 
 // ---------- Partida ----------
 export const MAX_PLAYERS_PER_ROOM = 4;
-export const MIN_PLAYERS_TO_START = 2;
+// 1 permite treinar 100% sozinho (o host remove o bot automático da sala).
+export const MIN_PLAYERS_TO_START = 1;
 export const STARTING_RESOURCES: Resources = { food: 250, wood: 250, gold: 100, stone: 100 };
 // Modo "Batalha/Rápido": começa cheio de recursos e numa era avançada, para ir
 // direto ao combate (partida rápida — e ótimo pra gravar o gameplay).
@@ -319,6 +320,18 @@ export const NODE_DEFS: Record<NodeType, NodeDef> = {
   gold_mine:  { resource: 'gold',  amount: 650 },
   stone_mine: { resource: 'stone', amount: 550 },
 };
+
+// ---------- Ovelhas (comida do início, estilo AoE) ----------
+export const SHEEP_WILD_OWNER = -1;   // dono sentinela = selvagem (branca)
+export const SHEEP_FOOD = 100;        // comida por ovelha
+export const SHEEP_CONVERT_RANGE = 3.0; // tiles: unidade mais perta que isto "rouba" a ovelha
+export const SHEEP_CONVERT_EVERY_TICKS = 5; // varre conversão 2x/s (TICK_RATE=10)
+export const SHEEP_SPEED = 0.7;       // tiles/s quando pastoreada (Fase 2)
+export const SHEEP_DECAY_PER_S = 2;   // carcaça abandonada apodrece (comida/s) até sumir (AoE)
+export const SHEEP_HERD_MIN = 2;      // rebanho perto do CV
+export const SHEEP_HERD_MAX = 4;
+export const SHEEP_SCATTER_CLUSTERS = 3; // grupinhos espalhados pelo mapa
+export const SHEEP_SCATTER_PER_CLUSTER = 2;
 
 // ---------- Jogadores ----------
 export const PLAYER_COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#eab308'];

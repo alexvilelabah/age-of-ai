@@ -65,12 +65,12 @@ export class GameInput {
     c.addEventListener('mousedown', this.onMouseDown);
     window.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('mouseup', this.onMouseUp);
-    c.addEventListener('mouseleave', () => {
-      this.ui.hasMouse = false;
-    });
     c.addEventListener('mouseenter', () => {
       this.ui.hasMouse = true;
     });
+    // Só desliga a rolagem de borda quando o cursor SAI DA JANELA (document),
+    // não quando passa sobre o HUD — senão a rolagem morria perto das barras.
+    document.addEventListener('mouseleave', this.onDocMouseLeave);
     // duplo clique numa unidade própria: seleciona todas do mesmo tipo na tela (AoE2)
     c.addEventListener('dblclick', (e) => {
       if (this.deps.isChatOpen() || this.ui.placement) return;
@@ -86,6 +86,11 @@ export class GameInput {
     this.mmDragging = false;
     this.leftDown = false;
     this.dragSelecting = false;
+    this.ui.hasMouse = false; // perdeu o foco: para a rolagem de borda
+  };
+
+  private onDocMouseLeave = (): void => {
+    this.ui.hasMouse = false;
   };
 
   destroy(): void {
@@ -94,6 +99,7 @@ export class GameInput {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
+    document.removeEventListener('mouseleave', this.onDocMouseLeave);
   }
 
   /** Chamado a cada frame para aplicar o pan por teclado. */
@@ -120,16 +126,17 @@ export class GameInput {
     }
 
     // rolagem pela borda da tela (estilo AoE2): a câmera anda no sentido da
-    // borda onde o mouse encosta — as QUATRO bordas iguais, inclusive a de
-    // baixo, que dispara no fundo da tela (não acima da barra). Desligada
-    // durante seleção (botão esquerdo) e arrasto do meio.
+    // borda onde o mouse encosta. Cima/baixo respeitam as barras do HUD: a zona
+    // de baixo dispara logo ACIMA da barra de comando (e segue valendo por cima
+    // dela) — antes ficava enterrada no fundo da janela e não rolava nada.
+    // Desligada durante seleção (botão esquerdo) e arrasto do meio.
     if (this.ui.hasMouse && !this.leftDown && !this.mmDragging) {
       let ex = 0;
       let ey = 0;
       if (this.ui.mouseX < EDGE_MARGIN) ex = -1;
       else if (this.ui.mouseX > this.cam.viewW - EDGE_MARGIN) ex = 1;
-      if (this.ui.mouseY < EDGE_MARGIN) ey = -1;
-      else if (this.ui.mouseY > this.cam.viewH - EDGE_MARGIN) ey = 1;
+      if (this.ui.mouseY < this.cam.topInset + EDGE_MARGIN) ey = -1;
+      else if (this.ui.mouseY > this.cam.viewH - this.cam.bottomInset - EDGE_MARGIN) ey = 1;
       if (ex !== 0 || ey !== 0) {
         // panPx move o CONTEÚDO; para a câmera ir no sentido da borda, o
         // conteúdo desliza pro lado oposto — daí o sinal negativo.
@@ -366,11 +373,16 @@ export class GameInput {
       if (!shift) this.gs.selection.clear();
       return;
     }
-    const id = pick.kind === 'unit' ? pick.unit.id : pick.kind === 'building' ? pick.building.id : pick.node.id;
+    const id =
+      pick.kind === 'unit' ? pick.unit.id
+      : pick.kind === 'building' ? pick.building.id
+      : pick.kind === 'sheep' ? pick.sheep.id
+      : pick.node.id;
 
     // som de seleção específico para cada tipo de objeto
     if (pick.kind === 'unit') this.sfx.selectUnit(pick.unit.type);
     else if (pick.kind === 'building') this.sfx.selectBuilding(pick.building.type);
+    else if (pick.kind === 'sheep') this.sfx.uiClick();
     else this.sfx.selectNode(pick.node.type);
 
     if (shift) {
@@ -432,6 +444,15 @@ export class GameInput {
       const s = this.cam.worldToScreen(p.x, p.y);
       if (s.x >= x0 && s.x <= x1 && s.y >= y0 && s.y <= y1) found.push(u.id);
     }
+    // Se a caixa não pegou nenhuma unidade, pega ovelhas PRÓPRIAS (rebanho).
+    if (found.length === 0) {
+      for (const sh of this.gs.sheep.values()) {
+        if (sh.owner !== this.gs.you) continue;
+        const p = this.gs.sheepPos(sh, now);
+        const s = this.cam.worldToScreen(p.x, p.y);
+        if (s.x >= x0 && s.x <= x1 && s.y >= y0 && s.y <= y1) found.push(sh.id);
+      }
+    }
     if (!additive) this.gs.selection.clear();
     else this.pruneToOwnUnitsOnly();
     for (const id of found) this.gs.selection.add(id);
@@ -471,6 +492,15 @@ export class GameInput {
     const w = this.cam.screenToWorld(pos.x, pos.y);
     const ownUnits = this.gs.selectedOwnUnits();
 
+    // Pastoreio (Fase 2): ovelhas próprias selecionadas → botão direito leva
+    // elas pra casa (mesmo comando 'move'; o servidor patheia a ovelha).
+    const ownSheep = this.gs.selectedOwnSheep();
+    if (ownUnits.length === 0 && ownSheep.length > 0) {
+      this.mark('move', w.x, w.y);
+      this.cmd({ kind: 'move', unitIds: ownSheep.map((s) => s.id), x: w.x, y: w.y, queue });
+      return;
+    }
+
     if (ownUnits.length > 0) {
       const pick = this.gs.pickAt(w.x, w.y, performance.now());
       const unitIds = ownUnits.map((u) => u.id);
@@ -480,6 +510,18 @@ export class GameInput {
         if (hasVillager) {
           this.mark('gather', w.x, w.y, pick.node.id);
           this.cmd({ kind: 'gather', unitIds, targetId: pick.node.id });
+        }
+        return;
+      }
+      if (pick?.kind === 'sheep') {
+        if (hasVillager) {
+          // abater/comer a ovelha (aproxima e vira sua); só aldeões coletam
+          this.mark('gather', w.x, w.y, pick.sheep.id);
+          this.cmd({ kind: 'gather', unitIds, targetId: pick.sheep.id });
+        } else {
+          // sem aldeão: só anda até lá (aproximar tropa também "rouba" a ovelha)
+          this.mark('move', w.x, w.y);
+          this.cmd({ kind: 'move', unitIds, x: w.x, y: w.y, queue });
         }
         return;
       }

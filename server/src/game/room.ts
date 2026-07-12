@@ -30,6 +30,12 @@ import {
   TRAIN_QUEUE_MAX,
   UNIT_AGE_REQ,
   UNIT_DEFS,
+  SHEEP_CONVERT_RANGE,
+  SHEEP_CONVERT_EVERY_TICKS,
+  SHEEP_DECAY_PER_S,
+  SHEEP_FOOD,
+  SHEEP_WILD_OWNER,
+  SHEEP_SPEED,
   carryCapacity,
   gatherMultiplier,
   techBonus,
@@ -49,13 +55,14 @@ import type {
   PlayerSnap,
   ResourceType,
   ServerMessage,
+  SheepSnap,
   UnitSnap,
   UnitType,
 } from '@age/shared';
 import { DIFFICULTY, runBotAI } from './ai';
 import { generateMap } from './mapgen';
 import { collectSpreadTiles, findPath, idx, isWalkable, nearestWalkableTile, ringTiles, type Grid } from './path';
-import { createUnit, type Building, type GamePlayer, type ResNode, type Unit } from './state';
+import { createUnit, type Building, type GamePlayer, type ResNode, type Sheep, type Unit } from './state';
 
 interface QueuedCmd {
   playerId: number;
@@ -78,6 +85,7 @@ export class Game {
   units = new Map<number, Unit>();
   buildings = new Map<number, Building>();
   nodes = new Map<number, ResNode>();
+  sheep = new Map<number, Sheep>();
   players = new Map<number, GamePlayer>();
   private nextId: number;
   private tick = 0;
@@ -140,6 +148,7 @@ export class Game {
       this.units.set(u.id, u);
     }
     for (const n of gen.nodes) this.nodes.set(n.id, n);
+    for (const s of gen.sheep) this.sheep.set(s.id, s); // selvagens (owner -1), sem remap
   }
 
   start(): void {
@@ -174,6 +183,13 @@ export class Game {
         this.buildings.delete(id);
       }
     }
+    // Ovelhas do derrotado voltam a ser selvagens (neutras) — não somem.
+    for (const s of this.sheep.values()) {
+      if (s.owner === playerId) {
+        s.owner = SHEEP_WILD_OWNER;
+        s.path = [];
+      }
+    }
   }
 
   private errorTo(playerId: number, code: string, params?: Record<string, string | number>): void {
@@ -198,7 +214,9 @@ export class Game {
     this.applyQueuedCommands();
 
     for (const u of this.units.values()) this.updateUnit(u, dt);
+    this.freeTrappedUnits();
     this.separateIdleUnits(dt);
+    this.updateSheep(dt);
     this.updateTowers(dt);
     for (const b of this.buildings.values()) this.updateBuildingTraining(b, dt);
 
@@ -236,6 +254,8 @@ export class Game {
     for (const b of this.buildings.values()) buildingsSnap.push(this.buildingToSnap(b));
     const nodesSnap: NodeSnap[] = [];
     for (const n of this.nodes.values()) nodesSnap.push({ id: n.id, type: n.type, tileX: n.tileX, tileY: n.tileY, amount: n.amount });
+    const sheepSnap: SheepSnap[] = [];
+    for (const s of this.sheep.values()) sheepSnap.push({ id: s.id, owner: s.owner, x: s.x, y: s.y, food: s.food });
     const playersSnap: PlayerSnap[] = [];
     for (const p of this.players.values()) {
       playersSnap.push({
@@ -257,6 +277,7 @@ export class Game {
       units: unitsSnap,
       buildings: buildingsSnap,
       nodes: nodesSnap,
+      sheep: sheepSnap,
       players: playersSnap,
       market: { ...this.marketPrices },
     };
@@ -317,7 +338,10 @@ export class Game {
   private checkVictory(): void {
     if (this.ended) return;
     const alive = [...this.players.values()].filter((p) => !p.defeated);
-    if (alive.length <= 1 && this.players.size > 1) {
+    // Solo (sandbox/treino): o jogo só termina se o único jogador for derrotado
+    // (senão ele ficaria preso num mapa vazio sem tela de fim).
+    const over = this.players.size > 1 ? alive.length <= 1 : alive.length === 0;
+    if (over) {
       this.ended = true;
       const winner = alive[0];
       const msg: ServerMessage = winner
@@ -525,8 +549,12 @@ export class Game {
 
   private cmdMove(playerId: number, unitIds: number[], x: number, y: number, queue = false): void {
     const units = this.ownedUnits(playerId, unitIds);
-    if (units.length === 0) return;
-    const spots = collectSpreadTiles(this.grid, Math.round(x), Math.round(y), Math.max(units.length, 1));
+    // Pastoreio (Fase 2): ovelhas PRÓPRIAS entre os ids também recebem a ordem.
+    const herd = unitIds
+      .map((id) => this.sheep.get(id))
+      .filter((s): s is Sheep => !!s && s.owner === playerId);
+    if (units.length === 0 && herd.length === 0) return;
+    const spots = collectSpreadTiles(this.grid, Math.round(x), Math.round(y), Math.max(units.length + herd.length, 1));
     units.forEach((u, i) => {
       const target = spots[i] ?? spots[spots.length - 1] ?? { x: Math.round(x), y: Math.round(y) };
       const wx = target.x + 0.5;
@@ -540,6 +568,32 @@ export class Game {
         u.state = u.path.length > 0 ? 'moving' : 'idle';
       }
     });
+    herd.forEach((s, i) => {
+      const target = spots[units.length + i] ?? spots[spots.length - 1] ?? { x: Math.round(x), y: Math.round(y) };
+      this.pathSheepTo(s, target.x + 0.5, target.y + 0.5);
+    });
+  }
+
+  /** Traça o caminho de uma ovelha pastoreada até (tx,ty) do mundo. */
+  private pathSheepTo(s: Sheep, tx: number, ty: number): void {
+    if (s.food < SHEEP_FOOD) return; // carcaça não anda
+    const gx = Math.round(tx - 0.5);
+    const gy = Math.round(ty - 0.5);
+    let goalX = gx;
+    let goalY = gy;
+    if (!isWalkable(this.grid, gx, gy)) {
+      const near = nearestWalkableTile(this.grid, gx, gy);
+      if (!near) {
+        s.path = [];
+        return;
+      }
+      goalX = near.x;
+      goalY = near.y;
+    }
+    const path = findPath(this.grid, Math.floor(s.x), Math.floor(s.y), new Set([idx(goalX, goalY, this.grid.size)]));
+    s.path = path ?? [];
+    s.pathTargetX = goalX + 0.5;
+    s.pathTargetY = goalY + 0.5;
   }
 
   private cmdStop(playerId: number, unitIds: number[]): void {
@@ -764,10 +818,13 @@ export class Game {
     if (units.length === 0) return;
     const node = this.nodes.get(targetId);
     const farm = this.buildings.get(targetId);
+    const sheep = this.sheep.get(targetId);
     if (node) {
       for (const u of units) this.startGatherNode(u, node);
     } else if (farm && farm.type === 'farm' && farm.owner === playerId && farm.progress >= 1) {
       for (const u of units) this.startGatherFarm(u, farm);
+    } else if (sheep && (sheep.owner === playerId || sheep.owner === SHEEP_WILD_OWNER)) {
+      for (const u of units) this.startGatherSheep(u, sheep);
     } else {
       this.errorTo(playerId, 'err.bad_gather_target');
     }
@@ -797,6 +854,19 @@ export class Game {
     } else {
       u.state = 'idle';
     }
+  }
+
+  /** Manda o aldeão abater/comer uma ovelha. Ela é passável (sem footprint):
+   *  caminha até o tile dela. Abater = fixa o dono da ovelha no comedor. */
+  private startGatherSheep(u: Unit, sheep: Sheep): void {
+    const resource: ResourceType = 'food';
+    if (u.gatherResource !== resource) u.carryAmount = 0;
+    this.clearTasks(u);
+    u.gatherTargetId = sheep.id;
+    u.gatherResource = resource;
+    sheep.owner = u.owner; // sob abate, a ovelha vira sua na hora
+    this.pathUnitTo(u, sheep.x, sheep.y);
+    u.state = 'movingToGather';
   }
 
   private findNearestDropOff(playerId: number, x: number, y: number, resource?: ResourceType): Building | null {
@@ -1242,6 +1312,104 @@ export class Game {
     }
   }
 
+  /** Solta unidades presas EM CIMA de um tile bloqueado (ex.: um prédio foi
+   *  colocado por cima delas): teleporta pro tile caminhável mais próximo. Uma
+   *  unidade PARADA (sem caminho) num tile bloqueado só existe se está presa —
+   *  os waypoints de um caminho são sempre caminháveis — então é seguro. Cura
+   *  o bug de "5 aldeões travados na fazenda que não movem nem colhem". */
+  private freeTrappedUnits(): void {
+    for (const u of this.units.values()) {
+      if (u.path.length > 0) continue;
+      const tx = Math.floor(u.x);
+      const ty = Math.floor(u.y);
+      if (isWalkable(this.grid, tx, ty)) continue;
+      const spot = nearestWalkableTile(this.grid, tx, ty);
+      if (!spot) continue;
+      u.x = spot.x + 0.5;
+      u.y = spot.y + 0.5;
+      this.clearTasks(u);
+      u.state = 'idle';
+    }
+  }
+
+  /** Ovelhas: pastoreio (Fase 2) + conversão por proximidade ("roubo", estilo
+   *  AoE) 2x/s + apodrecimento da carcaça. Some sozinho no late-game (ovelhas
+   *  comidas somem) — early-out quando não há nenhuma. */
+  private updateSheep(dt: number): void {
+    if (this.sheep.size === 0) return;
+
+    // Quem está cuidando de qual ovelha AGORA (comendo ou a caminho dela):
+    // trava o dono e PAUSA o apodrecimento (só carcaça largada apodrece).
+    const eating = new Map<number, number>(); // sheepId -> owner
+    for (const u of this.units.values()) {
+      if (u.type !== 'villager' || u.gatherTargetId === undefined) continue;
+      if (u.state !== 'gathering' && u.state !== 'movingToGather' && u.state !== 'returning') continue;
+      if (this.sheep.has(u.gatherTargetId)) eating.set(u.gatherTargetId, u.owner);
+    }
+
+    for (const s of this.sheep.values()) {
+      // Fase 2: avança quem foi mandada pastorear (carcaça não anda).
+      if (s.path.length > 0 && s.food >= SHEEP_FOOD) this.advanceSheep(s, dt);
+      // Carcaça (já mordida) sem ninguém cuidando: apodrece até virar pó (AoE).
+      if (s.food < SHEEP_FOOD && !eating.has(s.id)) {
+        s.food -= SHEEP_DECAY_PER_S * dt;
+        if (s.food <= 0) this.sheep.delete(s.id);
+      }
+    }
+
+    if (this.tick % SHEEP_CONVERT_EVERY_TICKS !== 0) return;
+
+    const R = SHEEP_CONVERT_RANGE;
+    for (const s of this.sheep.values()) {
+      // Carcaça tem dono congelado (quem abateu); não é roubável.
+      if (s.food < SHEEP_FOOD) continue;
+      const pinned = eating.get(s.id);
+      if (pinned !== undefined) {
+        s.owner = pinned;
+        continue;
+      }
+      // dono = jogador com a UNIDADE mais próxima dentro do raio (broad-phase por eixo)
+      let bestOwner = SHEEP_WILD_OWNER;
+      let bestId = Infinity;
+      let bestD2 = R * R;
+      for (const u of this.units.values()) {
+        const dx = u.x - s.x;
+        if (dx > R || dx < -R) continue;
+        const dy = u.y - s.y;
+        if (dy > R || dy < -R) continue;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < bestD2 || (d2 === bestD2 && u.id < bestId)) {
+          bestD2 = d2;
+          bestId = u.id;
+          bestOwner = u.owner;
+        }
+      }
+      // sem unidade no raio: mantém o dono (fica sua até alguém chegar mais perto)
+      if (bestOwner !== SHEEP_WILD_OWNER && bestOwner !== s.owner) s.owner = bestOwner;
+    }
+  }
+
+  /** Avança uma ovelha pastoreada pelo seu path (Fase 2). */
+  private advanceSheep(s: Sheep, dt: number): void {
+    let remaining = SHEEP_SPEED * dt;
+    while (remaining > 0 && s.path.length > 0) {
+      const wp = s.path[0];
+      const dx = wp.x + 0.5 - s.x;
+      const dy = wp.y + 0.5 - s.y;
+      const d = Math.hypot(dx, dy);
+      if (d <= remaining) {
+        s.x = wp.x + 0.5;
+        s.y = wp.y + 0.5;
+        remaining -= d;
+        s.path.shift();
+      } else {
+        s.x += (dx / d) * remaining;
+        s.y += (dy / d) * remaining;
+        remaining = 0;
+      }
+    }
+  }
+
   /** Move a unidade se o destino continuar em chão caminhável. */
   private nudge(u: Unit, dx: number, dy: number): void {
     const nx = u.x + dx;
@@ -1333,7 +1501,14 @@ export class Game {
     }
     const node = this.nodes.get(targetId);
     const farm = this.buildings.get(targetId);
-    const pos = node ? { x: node.tileX + 0.5, y: node.tileY + 0.5 } : farm ? this.nearestFarmTile(farm, u) : null;
+    const sheep = this.sheep.get(targetId);
+    const pos = node
+      ? { x: node.tileX + 0.5, y: node.tileY + 0.5 }
+      : sheep
+        ? { x: sheep.x, y: sheep.y }
+        : farm
+          ? this.nearestFarmTile(farm, u)
+          : null;
     if (!pos) {
       // a fonte acabou enquanto vinha a caminho: emenda na próxima mais perto
       this.retargetGather(u);
@@ -1343,9 +1518,13 @@ export class Game {
     if (d <= 1.6) {
       u.state = 'gathering';
     } else {
-      // repath (alvo pode ter sido removido/mudou)
+      // repath (alvo pode ter sido removido/mudou/andado)
       if (node && this.pathUnitAdjacentToSpread(u, node.tileX, node.tileY, 1, node.id)) return;
       if (farm && this.pathUnitAdjacentToSpread(u, farm.tileX, farm.tileY, BUILDING_DEFS.farm.size, farm.id)) return;
+      if (sheep) {
+        this.pathUnitTo(u, sheep.x, sheep.y);
+        if (u.path.length > 0) return;
+      }
       u.state = 'idle';
     }
   }
@@ -1365,13 +1544,14 @@ export class Game {
     }
     const node = this.nodes.get(targetId);
     const farm = this.buildings.get(targetId);
-    if (!node && !(farm && farm.type === 'farm')) {
+    const sheep = this.sheep.get(targetId);
+    if (!node && !(farm && farm.type === 'farm') && !sheep) {
       // fonte sumiu: tenta retarget mesmo recurso
       this.retargetGather(u);
       return;
     }
     const resource = u.gatherResource!;
-    const amountAvail = node ? node.amount : farm!.foodLeft ?? 0;
+    const amountAvail = node ? node.amount : sheep ? sheep.food : farm!.foodLeft ?? 0;
     // techs econômicas do Mercado: coleta mais rápida e mais capacidade de carga
     const techs = this.players.get(u.owner)?.techs ?? [];
     const cap = carryCapacity(techs);
@@ -1388,6 +1568,10 @@ export class Game {
         this.unblockFootprint(node.tileX, node.tileY, 1);
         this.nodes.delete(node.id);
       }
+    } else if (sheep) {
+      sheep.owner = u.owner; // abatendo = ovelha continua sua
+      sheep.food -= gathered;
+      if (sheep.food <= 0) this.sheep.delete(sheep.id); // sem unblock (ovelha não bloqueia)
     } else if (farm) {
       farm.foodLeft = (farm.foodLeft ?? 0) - gathered;
       if (farm.foodLeft <= 0) {
@@ -1397,7 +1581,11 @@ export class Game {
     }
 
     const full = u.carryAmount >= cap - 1e-6;
-    const sourceGone = node ? !this.nodes.has(node.id) : !this.buildings.has(farm!.id);
+    const sourceGone = node
+      ? !this.nodes.has(node.id)
+      : sheep
+        ? !this.sheep.has(sheep.id)
+        : !this.buildings.has(farm!.id);
     if (full) {
       this.sendToDropOff(u);
       return;
@@ -1562,8 +1750,12 @@ export class Game {
     const targetId = u.gatherTargetId;
     const node = targetId !== undefined ? this.nodes.get(targetId) : undefined;
     const farm = targetId !== undefined ? this.buildings.get(targetId) : undefined;
+    const sheepT = targetId !== undefined ? this.sheep.get(targetId) : undefined;
     if (node) {
       this.startGatherNode(u, node);
+    } else if (sheepT) {
+      // volta pra MESMA ovelha (senão ela ficava largada apodrecendo)
+      this.startGatherSheep(u, sheepT);
     } else if (farm && farm.type === 'farm') {
       this.startGatherFarm(u, farm);
     } else {

@@ -209,6 +209,11 @@ function dispatch(msg: ServerMessage): void {
     }
     case 'leftRoom': {
       lastRoomPlayers = [];
+      // Pode chegar do servidor (sala fechada por ociosidade) com o jogador
+      // parado no overlay de fim de jogo — derruba overlay e partida antes de
+      // trocar de tela (no-ops no fluxo normal de "Sair da sala").
+      gameOverScreen.hide();
+      teardownGame();
       showScreen('lobby');
       net.send({ type: 'listRooms' });
       break;
@@ -253,6 +258,7 @@ function dispatch(msg: ServerMessage): void {
           units: msg.units,
           buildings: msg.buildings,
           nodes: msg.nodes,
+          sheep: msg.sheep,
           players: msg.players,
           market: msg.market,
         });

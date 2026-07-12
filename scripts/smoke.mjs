@@ -240,6 +240,17 @@ async function main() {
     const roomId = roomStateA.roomId;
     record(typeof roomId === 'string' && roomId.length > 0, `A created room, roomId=${roomId}`);
 
+    // ---- room nasce com 1 bot automático; remove p/ manter o cenário 2 humanos ----
+    const hasAutoBot = Array.isArray(roomStateA.players) && roomStateA.players.some((p) => p.isBot);
+    record(hasAutoBot, 'New room starts with an auto-added bot');
+    a.send({ type: 'removeBot' });
+    await a.waitFor(
+      (m) => m.type === 'roomState' && m.players.length === 1,
+      5000,
+      'roomState with 1 player after removing auto-bot',
+    );
+    record(true, 'Auto-bot removed; room back to host only');
+
     // ---- B discovers room id: try pushed roomList first, else listRooms ----
     let roomIdFromB = await Promise.race([
       b.waitFor((m) => m.type === 'roomList' && m.rooms.some((r) => r.id === roomId), 3000, 'roomList push').then(

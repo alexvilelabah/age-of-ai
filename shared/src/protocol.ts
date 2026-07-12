@@ -9,6 +9,7 @@ import type {
   NodeSnap,
   PlayerInfo,
   PlayerSnap,
+  SheepSnap,
   UnitSnap,
   UnitType,
 } from './types';
@@ -107,6 +108,7 @@ export type ServerMessage =
       units: UnitSnap[];
       buildings: BuildingSnap[];
       nodes: NodeSnap[];
+      sheep: SheepSnap[];
       players: PlayerSnap[];
       /** Preços do mercado (ouro por lote de 100) — globais da sala. */
       market: MarketPrices;

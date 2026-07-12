@@ -5,14 +5,18 @@ import {
   BUILDING_DEFS,
   MAP_SIZE,
   NODE_DEFS,
+  SHEEP_HERD_MAX,
+  SHEEP_HERD_MIN,
+  SHEEP_SCATTER_CLUSTERS,
+  SHEEP_SCATTER_PER_CLUSTER,
   START_VILLAGERS,
   TILE_GRASS,
   TILE_WATER,
 } from '@age/shared';
 import type { NodeType } from '@age/shared';
 import { idx, inBounds, nearestWalkableTile, type Grid } from './path';
-import type { Building, ResNode, Unit } from './state';
-import { createUnit } from './state';
+import type { Building, ResNode, Sheep, Unit } from './state';
+import { createSheep, createUnit } from './state';
 
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -30,6 +34,7 @@ interface GenResult {
   units: Unit[];
   buildings: Building[];
   nodes: ResNode[];
+  sheep: Sheep[];
   nextId: number;
   seed: number;
 }
@@ -104,6 +109,7 @@ function tryGenerate(playerCount: number, seed: number, forceCarve = false): Gen
   const units: Unit[] = [];
   const buildings: Building[] = [];
   const nodes: ResNode[] = [];
+  const sheep: Sheep[] = [];
 
   const markBlocked = (x: number, y: number): void => {
     if (inBounds({ size, tiles, blocked } as Grid, x, y)) blocked[idx(x, y, size)] = 1;
@@ -195,6 +201,37 @@ function tryGenerate(playerCount: number, seed: number, forceCarve = false): Gen
 
   const grid: Grid = { size, tiles, blocked };
 
+  // --- Ovelhas (comida do início, estilo AoE): NÃO bloqueiam tile; caem no
+  //     tile caminhável mais próximo. Rebanho perto de cada CV + espalhadas
+  //     (neutras/roubáveis) pelo meio do mapa. ---
+  const placeSheepAt = (tx: number, ty: number): void => {
+    const cx0 = Math.max(0, Math.min(size - 1, Math.round(tx)));
+    const cy0 = Math.max(0, Math.min(size - 1, Math.round(ty)));
+    let x = cx0;
+    let y = cy0;
+    if (tiles[idx(x, y, size)] === TILE_WATER || blocked[idx(x, y, size)]) {
+      const w = nearestWalkableTile(grid, cx0, cy0);
+      if (!w) return;
+      x = w.x;
+      y = w.y;
+    }
+    sheep.push(createSheep(nextIdBox.v++, x + 0.5, y + 0.5));
+  };
+  for (let p = 0; p < playerCount; p++) {
+    const s = spawns[p];
+    const herd = SHEEP_HERD_MIN + Math.floor(rng() * (SHEEP_HERD_MAX - SHEEP_HERD_MIN + 1));
+    const a = rng() * Math.PI * 2;
+    const cx = s.x + Math.cos(a) * (4 + rng() * 3); // 4..7 tiles do CV
+    const cy = s.y + Math.sin(a) * (4 + rng() * 3);
+    for (let k = 0; k < herd; k++) placeSheepAt(cx + (rng() - 0.5) * 3, cy + (rng() - 0.5) * 3);
+  }
+  for (let i = 0; i < SHEEP_SCATTER_CLUSTERS; i++) {
+    const c = randomFarPoint(rng, size, spawns, 8);
+    for (let k = 0; k < SHEEP_SCATTER_PER_CLUSTER; k++) {
+      placeSheepAt(c.x + (rng() - 0.5) * 3, c.y + (rng() - 0.5) * 3);
+    }
+  }
+
   // --- Verificação de conectividade entre TCs ---
   // O centro do TC está dentro do próprio footprint (bloqueado); usamos o tile
   // caminhável mais próximo (ponto de entrada real para unidades) no teste.
@@ -208,7 +245,7 @@ function tryGenerate(playerCount: number, seed: number, forceCarve = false): Gen
     carveStraightPaths(grid, tcCenters);
   }
 
-  return { grid, units, buildings, nodes, nextId: nextIdBox.v, seed };
+  return { grid, units, buildings, nodes, sheep, nextId: nextIdBox.v, seed };
 }
 
 function ringSpots(tcX: number, tcY: number, size: number, mapSize: number): { x: number; y: number }[] {

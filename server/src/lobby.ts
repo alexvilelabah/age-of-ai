@@ -31,6 +31,7 @@ interface Room {
   inGame: boolean;
   game: Game | null;
   mode: GameMode; // 'normal' | 'batalha' (escolhido pelo host)
+  lastActivity: number; // última ação na sala (Date.now) — p/ fechar sala ociosa
 }
 
 const ROOM_ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -38,12 +39,46 @@ const ROOM_ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
  *  partida — se ele reconectar (mesmo clientId) dentro disso, retoma o jogo de
  *  onde estava; senão, é dado como derrotado. Ajustável via env (útil em testes). */
 const RECONNECT_GRACE_MS = Number(process.env.RECONNECT_GRACE_MS) || 60_000;
+/** Sala fora de jogo sem NENHUMA ação por este tempo é fechada (sala fantasma:
+ *  criou, foi embora e deixou os outros esperando). Ajustável via env p/ testes. */
+const ROOM_IDLE_MS = Number(process.env.ROOM_IDLE_MS) || 5 * 60_000;
 
 export class Lobby {
   private conns = new Map<number, Connection>();
   private rooms = new Map<string, Room>();
   private nextPlayerId = 1;
   private joinCounter = 0;
+  // Varredura de salas ociosas (unref: não segura o processo em scripts/testes).
+  private idleSweep = setInterval(() => this.sweepIdleRooms(), 60_000);
+
+  constructor() {
+    this.idleSweep.unref?.();
+  }
+
+  /** Marca atividade na sala (adia o fechamento por ociosidade). */
+  private touch(room: Room): void {
+    room.lastActivity = Date.now();
+  }
+
+  /** Fecha salas fora de jogo paradas há ROOM_IDLE_MS (sala fantasma). */
+  private sweepIdleRooms(): void {
+    const now = Date.now();
+    let closed = false;
+    for (const room of [...this.rooms.values()]) {
+      if (room.inGame || now - room.lastActivity < ROOM_IDLE_MS) continue;
+      for (const m of room.members.values()) {
+        if (m.isBot) continue;
+        const c = this.conns.get(m.id);
+        if (!c) continue;
+        c.roomId = null;
+        c.send({ type: 'error', code: 'err.room_idle_closed' });
+        c.send({ type: 'leftRoom' });
+      }
+      this.rooms.delete(room.id);
+      closed = true;
+    }
+    if (closed) this.broadcastRoomListToLobbyClients();
+  }
 
   connect(send: (msg: ServerMessage) => void): Connection {
     const id = this.nextPlayerId++;
@@ -207,6 +242,7 @@ export class Lobby {
     if (room.hostId !== conn.id) return; // só o host muda
     if (mode !== 'normal' && mode !== 'batalha') return;
     room.mode = mode;
+    this.touch(room);
     this.broadcastRoomState(room.id);
   }
 
@@ -231,8 +267,12 @@ export class Lobby {
       inGame: false,
       game: null,
       mode: 'normal',
+      lastActivity: Date.now(),
     };
     room.members.set(conn.id, { id: conn.id, ready: false, joinOrder: this.joinCounter++ });
+    // Sala já nasce com 1 bot: quem não configurar nada tem inimigo garantido
+    // (o host pode remover com "− Bot" pra treinar 100% sozinho).
+    this.addBotToRoom(room, 'normal');
     this.rooms.set(id, room);
     conn.roomId = id;
     this.broadcastRoomState(id);
@@ -259,6 +299,7 @@ export class Lobby {
     }
     room.members.set(conn.id, { id: conn.id, ready: false, joinOrder: this.joinCounter++ });
     conn.roomId = roomId;
+    this.touch(room);
     this.broadcastRoomState(roomId);
     this.broadcastRoomListToLobbyClients();
   }
@@ -291,6 +332,7 @@ export class Lobby {
       }
       if (oldest) room.hostId = oldest.id;
     }
+    this.touch(room);
     this.broadcastRoomState(roomId);
     this.broadcastRoomListToLobbyClients();
   }
@@ -371,21 +413,13 @@ export class Lobby {
     const m = room.members.get(conn.id);
     if (!m) return;
     m.ready = ready;
+    this.touch(room);
     this.broadcastRoomState(room.id);
   }
 
-  private addBot(conn: Connection, difficulty?: BotDifficulty): void {
-    if (!conn.roomId) return;
-    const room = this.rooms.get(conn.roomId);
-    if (!room || room.inGame) return;
-    if (room.hostId !== conn.id) {
-      conn.send({ type: 'error', code: 'err.host_only_bots' });
-      return;
-    }
-    if (room.members.size >= MAX_PLAYERS_PER_ROOM) {
-      conn.send({ type: 'error', code: 'err.room_full' });
-      return;
-    }
+  /** Insere um bot na sala (sem broadcasts). false = sala cheia. */
+  private addBotToRoom(room: Room, difficulty?: BotDifficulty): boolean {
+    if (room.members.size >= MAX_PLAYERS_PER_ROOM) return false;
     const botCount = [...room.members.values()].filter((m) => m.isBot).length;
     const id = this.nextPlayerId++;
     room.members.set(id, {
@@ -396,6 +430,22 @@ export class Lobby {
       difficulty: difficulty ?? 'normal',
       name: `Bot ${botCount + 1}`,
     });
+    return true;
+  }
+
+  private addBot(conn: Connection, difficulty?: BotDifficulty): void {
+    if (!conn.roomId) return;
+    const room = this.rooms.get(conn.roomId);
+    if (!room || room.inGame) return;
+    if (room.hostId !== conn.id) {
+      conn.send({ type: 'error', code: 'err.host_only_bots' });
+      return;
+    }
+    if (!this.addBotToRoom(room, difficulty)) {
+      conn.send({ type: 'error', code: 'err.room_full' });
+      return;
+    }
+    this.touch(room);
     this.broadcastRoomState(room.id);
     this.broadcastRoomListToLobbyClients();
   }
@@ -410,6 +460,7 @@ export class Lobby {
     }
     if (last) {
       room.members.delete(last.id);
+      this.touch(room);
       this.broadcastRoomState(room.id);
       this.broadcastRoomListToLobbyClients();
     }
@@ -427,6 +478,7 @@ export class Lobby {
       conn.send({ type: 'error', code: 'err.need_players', params: { n: MIN_PLAYERS_TO_START } });
       return;
     }
+    this.touch(room);
     const allReady = [...room.members.values()].every((m) => m.id === room.hostId || m.ready);
     if (!allReady) {
       conn.send({ type: 'error', code: 'err.not_all_ready' });
@@ -477,7 +529,10 @@ export class Lobby {
     if (room.game) room.game.stop();
     room.game = null;
     room.inGame = false;
-    for (const m of room.members.values()) m.ready = false;
+    // Humanos voltam "aguardando"; bots continuam prontos (não há como
+    // prontificá-los depois — sem isso a sala nunca reiniciava uma partida).
+    for (const m of room.members.values()) m.ready = !!m.isBot;
+    this.touch(room); // sala acabou de voltar do jogo — não varrer já
     // host permanece o mesmo (ou o membro mais antigo se por algum motivo saiu)
     if (![...room.members.values()].some((m) => m.id === room.hostId)) {
       let oldest: RoomPlayerState | null = null;
@@ -498,6 +553,7 @@ export class Lobby {
     if (conn.roomId) {
       const room = this.rooms.get(conn.roomId);
       if (!room) return;
+      if (!room.inGame) this.touch(room);
       for (const m of room.members.values()) this.conns.get(m.id)?.send(msg);
     } else {
       for (const c of this.conns.values()) {

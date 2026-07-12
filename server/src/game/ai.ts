@@ -12,6 +12,7 @@ import {
   countsForAgeUp,
   MAX_AGE,
   POP_CAP_MAX,
+  SHEEP_WILD_OWNER,
   TECH_DEFS,
   TILE_GRASS,
   TRAIN_QUEUE_MAX,
@@ -21,7 +22,7 @@ import {
 import type { BotDifficulty, BuildingType, NodeType, ResourceType, UnitType } from '@age/shared';
 import { idx, type Grid } from './path';
 import type { Game } from './room';
-import type { Building, ResNode, Unit } from './state';
+import type { Building, ResNode, Sheep, Unit } from './state';
 
 interface Pt { x: number; y: number }
 type BuildRole = 'house' | 'civic' | 'military' | 'resource' | 'farm' | 'tower';
@@ -306,7 +307,13 @@ function assignIdleVillagers(
     const wanted = (Object.keys(weights) as ResourceType[])
       .sort((a, b) => (weights[b] * villagers.length - assigned[b]) - (weights[a] * villagers.length - assigned[a]))[0];
     let targetId: number | null = null;
-    if (wanted === 'food' && farms.length > 0) {
+    if (wanted === 'food') {
+      // Ovelha próxima (selvagem ou já do bot) = comida rápida do início; abater
+      // também "rouba" a selvagem pro bot. Preferida sobre frutas/fazenda perto.
+      const sheep = nearestSheep(game, villager.x, villager.y, 12, botId);
+      if (sheep) targetId = sheep.id;
+    }
+    if (targetId === null && wanted === 'food' && farms.length > 0) {
       const berry = nearestNode(nodes, villager.x, villager.y, 'berry_bush');
       const farm = nearestBuilding(farms, villager.x, villager.y);
       if (farm && (!berry || distanceToNode(berry, villager.x, villager.y) > 12)) {
@@ -347,6 +354,21 @@ function assignIdleVillagers(
       assigned.stone++;
     }
   }
+}
+
+/** Ovelha mais próxima que o bot pode comer (selvagem ou já dele) dentro do raio. */
+function nearestSheep(game: Game, x: number, y: number, maxDist: number, botId: number): Sheep | null {
+  let best: Sheep | null = null;
+  let bestD = maxDist;
+  for (const s of game.sheep.values()) {
+    if (s.owner !== SHEEP_WILD_OWNER && s.owner !== botId) continue;
+    const d = Math.hypot(s.x - x, s.y - y);
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
+  }
+  return best;
 }
 
 function ensureEconomicBuildings(

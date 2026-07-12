@@ -29,8 +29,8 @@ check('B "ALEX" REJEITADO (case-insensitive)', sent(outB, 'nameTaken'));
 outB.length = 0; g.handleMessage(b.id, { type: 'setName', name: 'bruno' });
 check('B "bruno" ACEITO', b.name === 'bruno' && sent(outB, 'nameOk'));
 
-// A sai -> "alex" fica livre pra B
-g.disconnect(a.id);
+// A sai -> "alex" fica livre pra B (disconnect recebe a CONEXÃO, não o id)
+g.disconnect(a);
 outB.length = 0; g.handleMessage(b.id, { type: 'setName', name: 'alex' });
 check('após A sair, B pode usar "alex"', b.name === 'alex' && sent(outB, 'nameOk'));
 

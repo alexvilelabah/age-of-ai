@@ -11,10 +11,11 @@ import type {
   NodeType,
   PlayerInfo,
   PlayerSnap,
+  SheepSnap,
   UnitSnap,
   UnitType,
 } from '@age/shared';
-import { BUILDING_DEFS, SNAPSHOT_TICKS, TICK_MS, TILE_GRASS } from '@age/shared';
+import { BUILDING_DEFS, SHEEP_WILD_OWNER, SNAPSHOT_TICKS, TICK_MS, TILE_GRASS } from '@age/shared';
 
 export const SNAP_INTERVAL_MS = SNAPSHOT_TICKS * TICK_MS;
 
@@ -23,6 +24,7 @@ export interface SnapshotData {
   units: UnitSnap[];
   buildings: BuildingSnap[];
   nodes: NodeSnap[];
+  sheep: SheepSnap[];
   players: PlayerSnap[];
   /** Preços do mercado (ouro por lote de 100) — globais da sala. */
   market?: MarketPrices;
@@ -31,7 +33,8 @@ export interface SnapshotData {
 export type PickResult =
   | { kind: 'unit'; unit: UnitSnap }
   | { kind: 'building'; building: BuildingSnap }
-  | { kind: 'node'; node: NodeSnap };
+  | { kind: 'node'; node: NodeSnap }
+  | { kind: 'sheep'; sheep: SheepSnap };
 
 /** Raio visual/de clique de uma unidade, em tiles. */
 export function unitRadius(type: UnitType): number {
@@ -48,6 +51,7 @@ export class GameState {
   units = new Map<number, UnitSnap>();
   buildings = new Map<number, BuildingSnap>();
   nodes = new Map<number, NodeSnap>();
+  sheep = new Map<number, SheepSnap>();
   playerSnaps = new Map<number, PlayerSnap>();
   /** Preços do mercado (ouro por lote de 100), atualizados por snapshot. */
   marketPrices: MarketPrices = { food: 100, wood: 100, stone: 100 };
@@ -63,6 +67,8 @@ export class GameState {
   private prevPos = new Map<number, { x: number; y: number }>();
   /** Nós que sumiram do snapshot (recurso esgotou) — para a animação de queda. */
   removedNodes: { node: NodeSnap; at: number }[] = [];
+  /** Ovelhas que sumiram (comidas) — para o "poof". */
+  removedSheep: { sheep: SheepSnap; at: number }[] = [];
   /** Números de dano flutuantes (x,y em tile; quantidade; timestamp ms). */
   hits: { x: number; y: number; amount: number; at: number }[] = [];
   /** id -> timestamp do último dano recebido (para o flash de impacto). */
@@ -97,6 +103,7 @@ export class GameState {
     // Guarda posições atuais para interpolar até as novas.
     this.prevPos.clear();
     for (const u of this.units.values()) this.prevPos.set(u.id, { x: u.x, y: u.y });
+    for (const s of this.sheep.values()) this.prevPos.set(s.id, { x: s.x, y: s.y });
     this.snapTime = performance.now();
 
     this.tick = typeof snap.tick === 'number' ? snap.tick : this.tick;
@@ -164,6 +171,19 @@ export class GameState {
     for (const n of Array.isArray(snap.nodes) ? snap.nodes : []) {
       if (n && typeof n.id === 'number') this.nodes.set(n.id, n);
     }
+    // Ovelhas que sumiram (comidas) → "poof".
+    const newSheepIds = new Set<number>();
+    for (const s of Array.isArray(snap.sheep) ? snap.sheep : []) {
+      if (s && typeof s.id === 'number') newSheepIds.add(s.id);
+    }
+    for (const [id, s] of this.sheep) {
+      if (!newSheepIds.has(id)) this.removedSheep.push({ sheep: s, at: this.snapTime });
+    }
+    this.removedSheep = this.removedSheep.filter((r) => r.at > this.snapTime - 900);
+    this.sheep.clear();
+    for (const s of Array.isArray(snap.sheep) ? snap.sheep : []) {
+      if (s && typeof s.id === 'number') this.sheep.set(s.id, s);
+    }
     this.playerSnaps.clear();
     for (const p of Array.isArray(snap.players) ? snap.players : []) {
       if (p && typeof p.id === 'number') this.playerSnaps.set(p.id, p);
@@ -171,7 +191,7 @@ export class GameState {
 
     // Remove da seleção entidades que deixaram de existir.
     for (const id of [...this.selection]) {
-      if (!this.units.has(id) && !this.buildings.has(id) && !this.nodes.has(id)) {
+      if (!this.units.has(id) && !this.buildings.has(id) && !this.nodes.has(id) && !this.sheep.has(id)) {
         this.selection.delete(id);
       }
     }
@@ -187,6 +207,21 @@ export class GameState {
     if (t < 0) t = 0;
     if (t > 1) t = 1;
     return { x: prev.x + (u.x - prev.x) * t, y: prev.y + (u.y - prev.y) * t };
+  }
+
+  /** Posição interpolada de uma ovelha (parada na Fase 1; anda na Fase 2). */
+  sheepPos(s: SheepSnap, now: number): { x: number; y: number } {
+    const prev = this.prevPos.get(s.id);
+    if (!prev) return { x: s.x, y: s.y };
+    let t = (now - this.snapTime) / SNAP_INTERVAL_MS;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    return { x: prev.x + (s.x - prev.x) * t, y: prev.y + (s.y - prev.y) * t };
+  }
+
+  /** true se a ovelha é selvagem (branca, sem dono). */
+  isWildSheep(s: SheepSnap): boolean {
+    return s.owner === SHEEP_WILD_OWNER;
   }
 
   tileAt(tx: number, ty: number): number {
@@ -230,6 +265,25 @@ export class GameState {
     return undefined;
   }
 
+  /** Ovelha selecionada (para o painel de info). */
+  selectedSheep(): SheepSnap | undefined {
+    for (const id of this.selection) {
+      const s = this.sheep.get(id);
+      if (s) return s;
+    }
+    return undefined;
+  }
+
+  /** Ovelhas próprias selecionadas (pastoreio, Fase 2). */
+  selectedOwnSheep(): SheepSnap[] {
+    const out: SheepSnap[] = [];
+    for (const id of this.selection) {
+      const s = this.sheep.get(id);
+      if (s && s.owner === this.you) out.push(s);
+    }
+    return out;
+  }
+
   /** A seleção atual contém apenas unidades do próprio jogador? */
   selectionIsOwnUnits(): boolean {
     if (this.selection.size === 0) return false;
@@ -264,6 +318,23 @@ export class GameState {
       }
     }
     if (bestUnit) return { kind: 'unit', unit: bestUnit };
+
+    // Ovelhas (depois das unidades: um boneco em cima tem prioridade de clique).
+    let bestSheep: SheepSnap | null = null;
+    let bestSD2 = Infinity;
+    for (const s of this.sheep.values()) {
+      const pos = this.sheepPos(s, now);
+      const r = 0.55;
+      const t = Math.max(0, Math.min(0.6, ((pos.x - wx) + (pos.y - wy)) / 2));
+      const dx = pos.x - (wx + t);
+      const dy = pos.y - (wy + t);
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= r * r && d2 < bestSD2) {
+        bestSD2 = d2;
+        bestSheep = s;
+      }
+    }
+    if (bestSheep) return { kind: 'sheep', sheep: bestSheep };
 
     // a linha diagonal cruza o retângulo [x0..x1]×[y0..y1] para algum k ≤ maxK?
     const diagHit = (x0: number, y0: number, x1: number, y1: number, maxK: number): boolean => {

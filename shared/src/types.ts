@@ -85,6 +85,17 @@ export interface NodeSnap {
   amount: number; // recurso restante
 }
 
+/** Ovelha (estilo AoE): comida do início de jogo, branca quando selvagem
+ *  (owner = -1), tingida da cor do dono quando um jogador a converte
+ *  chegando perto. Posição em coordenadas de tile (centro), como as unidades. */
+export interface SheepSnap {
+  id: number;
+  owner: number; // -1 = selvagem (branca)
+  x: number;
+  y: number;
+  food: number; // comida restante
+}
+
 export interface PlayerSnap {
   id: number;
   resources: Resources;

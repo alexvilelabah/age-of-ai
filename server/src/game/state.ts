@@ -1,7 +1,7 @@
 // Tipos internos da simulação (estado completo do servidor — os snaps do
 // protocolo são projeções destes).
 
-import { UNIT_DEFS } from '@age/shared';
+import { SHEEP_FOOD, SHEEP_WILD_OWNER, UNIT_DEFS } from '@age/shared';
 import type {
   BotDifficulty,
   BuildingType,
@@ -78,6 +78,23 @@ export interface ResNode {
   amount: number;
 }
 
+/** Ovelha (estilo AoE): fonte de comida móvel e "roubável". Categoria própria
+ *  (NÃO é Unit) de propósito — assim nada de combate/pop/aggro/torre/bot a
+ *  enxerga (tudo isso itera `units`). Selvagem = owner -1 (branca). */
+export interface Sheep {
+  id: number;
+  owner: number; // -1 = selvagem
+  x: number; // centro, em tiles
+  y: number;
+  food: number;
+  /** Id do aldeão comendo agora: congela conversão/movimento enquanto abate. */
+  heldBy?: number;
+  /** Pastoreio (Fase 2): caminho quando o dono manda mover. */
+  path: Waypoint[];
+  pathTargetX?: number;
+  pathTargetY?: number;
+}
+
 export interface GamePlayer {
   id: number;
   name: string;
@@ -92,6 +109,10 @@ export interface GamePlayer {
   techs: Set<string>;
   /** Só bots: nível de dificuldade (dirige a IA). Humanos = undefined. */
   difficulty?: BotDifficulty;
+}
+
+export function createSheep(id: number, x: number, y: number): Sheep {
+  return { id, owner: SHEEP_WILD_OWNER, x, y, food: SHEEP_FOOD, path: [] };
 }
 
 export function createUnit(id: number, owner: number, type: UnitType, x: number, y: number): Unit {

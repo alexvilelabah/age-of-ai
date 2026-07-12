@@ -3,8 +3,8 @@
 // desenhados como blocos/marcadores isométricos simples (placeholders) que serão
 // substituídos por arte dedicada nas próximas etapas.
 
-import type { BuildingSnap, BuildingType, NodeSnap, NodeType, ResourceType, UnitSnap } from '@age/shared';
-import { BUILDING_DEFS, DEFENSE_DEFS, TILE_WATER, UNIT_DEFS, techBonus } from '@age/shared';
+import type { BuildingSnap, BuildingType, NodeSnap, NodeType, ResourceType, SheepSnap, UnitSnap } from '@age/shared';
+import { BUILDING_DEFS, DEFENSE_DEFS, SHEEP_FOOD, TILE_WATER, UNIT_DEFS, techBonus } from '@age/shared';
 import type { GameState } from '../state';
 import type { Camera } from './camera';
 import { ISO_HH, ISO_HW } from './camera';
@@ -273,10 +273,11 @@ export class Renderer {
     // --- entidades ordenadas por profundidade (x+y crescente) ---
     interface Item {
       depth: number;
-      kind: 'node' | 'building' | 'unit';
+      kind: 'node' | 'building' | 'unit' | 'sheep';
       node?: NodeSnap;
       building?: BuildingSnap;
       unit?: UnitSnap;
+      sheep?: SheepSnap;
       ux?: number;
       uy?: number;
     }
@@ -300,6 +301,11 @@ export class Renderer {
       if (pos.x < minX - 2 || pos.x > maxX + 2 || pos.y < minY - 2 || pos.y > maxY + 2) continue;
       items.push({ depth: pos.x + pos.y, kind: 'unit', unit: u, ux: pos.x, uy: pos.y });
     }
+    for (const s of this.gs.sheep.values()) {
+      const pos = this.gs.sheepPos(s, now);
+      if (pos.x < minX - 2 || pos.x > maxX + 2 || pos.y < minY - 2 || pos.y > maxY + 2) continue;
+      items.push({ depth: pos.x + pos.y, kind: 'sheep', sheep: s, ux: pos.x, uy: pos.y });
+    }
     items.sort((a, b) => a.depth - b.depth);
 
     for (const it of items) {
@@ -309,6 +315,8 @@ export class Renderer {
         this.drawBuilding(ctx, px, py, hh, it.building, this.gs.selection.has(it.building.id), now);
       } else if (it.kind === 'unit' && it.unit) {
         this.drawUnit(ctx, px, py, hh, it.unit, it.ux!, it.uy!, this.gs.selection.has(it.unit.id), now);
+      } else if (it.kind === 'sheep' && it.sheep) {
+        this.drawSheep(ctx, px, py, hh, it.sheep, it.ux!, it.uy!, this.gs.selection.has(it.sheep.id));
       }
     }
 
@@ -328,6 +336,17 @@ export class Renderer {
       ctx.translate(-bx, -by);
       this.drawTree(ctx, bx, by, hh, r.node.tileX, r.node.tileY);
       ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+
+    // --- ovelhas comidas: puff de lã que sobe e some ---
+    for (const r of this.gs.removedSheep) {
+      const age = (now - r.at) / 900;
+      if (age < 0 || age >= 1) continue;
+      const bx = px(r.sheep.x, r.sheep.y);
+      const by = py(r.sheep.x, r.sheep.y) - hh * age * 0.8;
+      ctx.globalAlpha = 0.7 * (1 - age);
+      this.blob(ctx, bx, by, hh * (0.3 + age * 0.3), hh * (0.24 + age * 0.24), '#f4f2ee');
     }
     ctx.globalAlpha = 1;
 
@@ -2026,7 +2045,8 @@ export class Renderer {
       ctx.save();
       ctx.globalAlpha = Math.max(0, 1 - Math.max(0, age - 0.45) / 0.55);
       ctx.translate(sx, sy);
-      ctx.rotate(dir * ease * 1.5);
+      // ~49° (não 86°): lê como corpo caindo, não "cabeça no chão".
+      ctx.rotate(dir * ease * 0.85);
       ctx.translate(-sx, -sy);
       this.drawUnitBody(ctx, u, sx, sy, U, now);
       ctx.restore();
@@ -2233,6 +2253,75 @@ export class Renderer {
     ctx.fillStyle = '#251d18'; ctx.beginPath();
     ctx.arc(cx + dir * U * 0.06, cy - U * 0.025, r, 0, Math.PI * 2);
     ctx.arc(cx + dir * U * 0.17, cy - U * 0.015, r, 0, Math.PI * 2); ctx.fill();
+  }
+
+  /** Ovelha (estilo AoE): lã branca; selvagem sem dono, anel da cor do dono
+   *  quando convertida; barrinha de comida quando sendo abatida. */
+  private drawSheep(
+    ctx: CanvasRenderingContext2D,
+    px: (x: number, y: number) => number,
+    py: (x: number, y: number) => number,
+    hh: number,
+    s: SheepSnap,
+    wx: number,
+    wy: number,
+    selected: boolean,
+  ): void {
+    const sx = px(wx, wy);
+    const sy = py(wx, wy);
+    const U = hh * 0.62;
+    const wild = this.gs.isWildSheep(s);
+
+    this.blob(ctx, sx, sy, U * 0.7, U * 0.32, 'rgba(0,0,0,0.22)'); // sombra
+
+    if (!wild) {
+      // anel da cor do dono (posse) — some no selvagem (branca neutra)
+      ctx.strokeStyle = this.gs.colorOf(s.owner);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, U * 0.8, U * 0.36, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (selected) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, U * 0.94, U * 0.46, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // patas
+    for (const dx of [-0.3, -0.1, 0.1, 0.3]) {
+      this.block(ctx, sx + dx * U, sy - U * 0.02, Math.max(1, U * 0.08), U * 0.22, '#4a4038');
+    }
+
+    // corpo de lã (branco) — vários blobs sobrepostos
+    const bodyY = sy - U * 0.42;
+    const wool = '#f4f2ee';
+    const woolSh = '#d6d2ca';
+    this.blob(ctx, sx - U * 0.32, bodyY + U * 0.05, U * 0.26, U * 0.24, wool, woolSh);
+    this.blob(ctx, sx + U * 0.28, bodyY + U * 0.03, U * 0.28, U * 0.26, wool, woolSh);
+    this.blob(ctx, sx - U * 0.04, bodyY - U * 0.22, U * 0.3, U * 0.24, wool, woolSh);
+    this.blob(ctx, sx, bodyY, U * 0.52, U * 0.4, wool, woolSh);
+
+    // cabeça escura voltada pra +x
+    const hx = sx + U * 0.5;
+    const hy = bodyY + U * 0.05;
+    this.blob(ctx, hx, hy, U * 0.2, U * 0.17, '#3a332c');
+    this.blob(ctx, hx + U * 0.13, hy + U * 0.03, U * 0.08, U * 0.09, '#2b251f');
+
+    // barra de comida quando sendo abatida
+    if (s.food < SHEEP_FOOD - 0.5) {
+      const w = U * 1.1;
+      const h = Math.max(2, U * 0.12);
+      const bx = sx - w / 2;
+      const by = bodyY - U * 0.6;
+      const r = Math.max(0, Math.min(1, s.food / SHEEP_FOOD));
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(bx, by, w, h);
+      ctx.fillStyle = '#6bbf59';
+      ctx.fillRect(bx, by, w * r, h);
+    }
   }
 
   private drawUnit(
