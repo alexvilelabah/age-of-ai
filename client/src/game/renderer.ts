@@ -2271,48 +2271,76 @@ export class Renderer {
     const sy = py(wx, wy);
     const U = hh * 0.62;
     const wild = this.gs.isWildSheep(s);
+    const bodyY = sy - U * 0.42;
 
-    this.blob(ctx, sx, sy, U * 0.7, U * 0.32, 'rgba(0,0,0,0.22)'); // sombra
+    // Sombra baixa e macia, mantendo a leitura da ovelha apoiada no chão.
+    this.blob(ctx, sx + U * 0.03, sy, U * 0.88, U * 0.3, 'rgba(0,0,0,0.22)');
 
     if (!wild) {
       // anel da cor do dono (posse) — some no selvagem (branca neutra)
       ctx.strokeStyle = this.gs.colorOf(s.owner);
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.ellipse(sx, sy, U * 0.8, U * 0.36, 0, 0, Math.PI * 2);
+      ctx.ellipse(sx, sy, U * 0.98, U * 0.36, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
     if (selected) {
       ctx.strokeStyle = 'rgba(255,255,255,0.92)';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.ellipse(sx, sy, U * 0.94, U * 0.46, 0, 0, Math.PI * 2);
+      ctx.ellipse(sx, sy, U * 1.12, U * 0.46, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
 
-    // patas
-    for (const dx of [-0.3, -0.1, 0.1, 0.3]) {
-      this.block(ctx, sx + dx * U, sy - U * 0.02, Math.max(1, U * 0.08), U * 0.22, '#4a4038');
+    // Gira somente o animal para ele andar de frente; indicadores ficam no chão.
+    const facing = this.gs.sheepFacing(s);
+    ctx.save();
+    if (facing) {
+      const faceX = px(wx + facing.x, wy + facing.y) - sx;
+      const faceY = py(wx + facing.x, wy + facing.y) - sy;
+      ctx.translate(sx, bodyY);
+      ctx.rotate(Math.atan2(faceY, faceX));
+      ctx.translate(-sx, -bodyY);
     }
 
-    // corpo de lã (branco) — vários blobs sobrepostos
-    const bodyY = sy - U * 0.42;
-    const wool = '#f4f2ee';
-    const woolSh = '#d6d2ca';
-    this.blob(ctx, sx - U * 0.32, bodyY + U * 0.05, U * 0.26, U * 0.24, wool, woolSh);
-    this.blob(ctx, sx + U * 0.28, bodyY + U * 0.03, U * 0.28, U * 0.26, wool, woolSh);
-    this.blob(ctx, sx - U * 0.04, bodyY - U * 0.22, U * 0.3, U * 0.24, wool, woolSh);
-    this.blob(ctx, sx, bodyY, U * 0.52, U * 0.4, wool, woolSh);
+    // Quatro patas curtas, em dois planos, parcialmente escondidas pela lã.
+    const leg = '#4a4038';
+    const hoof = '#302a25';
+    this.block(ctx, sx - U * 0.43, bodyY - U * 0.2, Math.max(1, U * 0.08), U * 0.18, leg);
+    this.block(ctx, sx + U * 0.43, bodyY - U * 0.2, Math.max(1, U * 0.08), U * 0.18, leg);
+    this.block(ctx, sx - U * 0.44, bodyY + U * 0.25, Math.max(1, U * 0.09), U * 0.2, leg);
+    this.block(ctx, sx + U * 0.44, bodyY + U * 0.25, Math.max(1, U * 0.09), U * 0.2, leg);
+    this.blob(ctx, sx - U * 0.44, bodyY + U * 0.35, U * 0.07, U * 0.045, hoof);
+    this.blob(ctx, sx + U * 0.44, bodyY + U * 0.35, U * 0.07, U * 0.045, hoof);
 
-    // cabeça escura voltada pra +x
-    const hx = sx + U * 0.5;
-    const hy = bodyY + U * 0.05;
-    this.blob(ctx, hx, hy, U * 0.2, U * 0.17, '#3a332c');
-    this.blob(ctx, hx + U * 0.13, hy + U * 0.03, U * 0.08, U * 0.09, '#2b251f');
+    // Base sombreada e tufos sobrepostos dão volume à lã sem perder a silhueta limpa.
+    const wool = '#f5f3ee';
+    const woolLight = '#fffdfa';
+    const woolMid = '#e7e3dc';
+    const woolSh = '#d2cec6';
+    this.blob(ctx, sx - U * 0.68, bodyY + U * 0.02, U * 0.14, U * 0.14, woolMid, woolSh); // cauda
+    this.blob(ctx, sx, bodyY + U * 0.06, U * 0.73, U * 0.36, woolMid, woolSh);
+    this.blob(ctx, sx - U * 0.39, bodyY + U * 0.02, U * 0.36, U * 0.28, wool, woolSh);
+    this.blob(ctx, sx + U * 0.36, bodyY + U * 0.03, U * 0.38, U * 0.29, wool, woolSh);
+    this.blob(ctx, sx - U * 0.34, bodyY - U * 0.17, U * 0.3, U * 0.25, wool, woolSh);
+    this.blob(ctx, sx + U * 0.05, bodyY - U * 0.18, U * 0.31, U * 0.25, wool, woolSh);
+    this.blob(ctx, sx + U * 0.39, bodyY - U * 0.13, U * 0.28, U * 0.24, wool, woolSh);
+    this.blob(ctx, sx - U * 0.12, bodyY + U * 0.07, U * 0.36, U * 0.24, woolLight);
+
+    // Cabeça escura voltada para +x, com orelhas, focinho e olho discretos.
+    const hx = sx + U * 0.68;
+    const hy = bodyY + U * 0.06;
+    this.blob(ctx, hx - U * 0.03, hy - U * 0.15, U * 0.11, U * 0.055, '#51473e');
+    this.blob(ctx, hx - U * 0.03, hy + U * 0.15, U * 0.11, U * 0.055, '#403831');
+    this.blob(ctx, hx, hy, U * 0.2, U * 0.18, '#453c34', '#302a25');
+    this.blob(ctx, hx + U * 0.15, hy + U * 0.025, U * 0.1, U * 0.105, '#302a25');
+    this.blob(ctx, hx + U * 0.07, hy - U * 0.055, U * 0.026, U * 0.026, '#171412');
+    this.blob(ctx, hx + U * 0.078, hy - U * 0.063, U * 0.009, U * 0.009, '#f7f1e7');
+    ctx.restore();
 
     // barra de comida quando sendo abatida
     if (s.food < SHEEP_FOOD - 0.5) {
-      const w = U * 1.1;
+      const w = U * 1.45;
       const h = Math.max(2, U * 0.12);
       const bx = sx - w / 2;
       const by = bodyY - U * 0.6;
@@ -2349,9 +2377,10 @@ export class Renderer {
       u.state === 'movingToAttack' || u.state === 'returning';
     const attacking = u.state === 'attacking';
 
-    // direção que a unidade encara (para onde trabalha/ataca), em X de tela
-    let face = 1;
-    if (u.targetId != null) {
+    // Ao andar, encara o último deslocamento horizontal claro; parada em uma
+    // ação com alvo, encara o alvo como antes.
+    let face = this.gs.unitFacing(u) ?? 1;
+    if (!moving && u.targetId != null) {
       const nd = this.gs.nodes.get(u.targetId);
       const bd = this.gs.buildings.get(u.targetId);
       const tu = this.gs.units.get(u.targetId);
@@ -2391,9 +2420,16 @@ export class Renderer {
       let fy = sy;
       if (moving) fy = sy - Math.abs(Math.sin(now * 0.012 + u.id)) * 0.14 * U;
       if (attacking) fx = sx + face * Math.max(0, Math.sin(now * 0.011 + u.id)) * 0.3 * U;
+      ctx.save();
+      if (face === -1) {
+        ctx.translate(fx, 0);
+        ctx.scale(-1, 1);
+        ctx.translate(-fx, 0);
+      }
       if (u.type === 'swordsman') this.figSwordsman(ctx, fx, fy, U, color, dark, skin, steel, age);
       else if (u.type === 'archer') this.figArcher(ctx, fx, fy, U, color, dark, skin, age);
       else if (u.type === 'knight') this.figKnight(ctx, fx, fy, U, color, dark, skin, steel, age);
+      ctx.restore();
     }
 
     // flash claro de impacto ao levar dano (some em ~200ms)

@@ -1,7 +1,7 @@
 // Teste headless da Fase 1 das ovelhas (fiel ao AoE): selvagens, conversão por
 // proximidade ("roubo"), abate que some, e regressões (não é atacada, não conta
 // pop, não bloqueia tile). Roda: npx tsx scripts/sheep_test.ts
-import { SHEEP_WILD_OWNER, SHEEP_FOOD, START_VILLAGERS, UNIT_DEFS } from '@age/shared';
+import { SHEEP_WILD_OWNER, SHEEP_FOOD, SHEEP_FOOD_MAX, START_VILLAGERS, UNIT_DEFS } from '@age/shared';
 import { Game } from '../server/src/game/room.ts';
 import { createUnit } from '../server/src/game/state.ts';
 
@@ -133,7 +133,8 @@ if (S4) {
     let iters = 0;
     while (g.sheep.has(id) && iters++ < 100) g.updateSheep(0.5); // 2/s * 0.5 = 1 por chamada
     check('carcaça largada apodrece até VIRAR PÓ (some)', !g.sheep.has(id) && iters < 100);
-    check('ovelha inteira NÃO apodrece', whole.food === SHEEP_FOOD);
+    // inteira não apodrece (não perde comida); pode ter ENGORDADO parada => food >= 100
+    check('ovelha inteira NÃO apodrece (food >= 100)', whole.food >= SHEEP_FOOD);
   } else {
     check('(sem ovelhas p/ teste de apodrecer)', false);
   }
@@ -160,6 +161,51 @@ if (S4) {
     }
   } else {
     check('(sem ovelha p/ teste de carcaça)', false);
+  }
+}
+
+// (10) ENGORDA: ovelha saudável e PARADA ganha comida até o teto, sem passar dele.
+{
+  const sh = [...g.sheep.values()][0];
+  if (sh) {
+    // limpa qualquer aldeão que estivesse cuidando dela (senão conta como "tended")
+    for (const u of g.units.values()) u.gatherTargetId = undefined;
+    sh.owner = 1; sh.food = SHEEP_FOOD; sh.path = [];
+    const antes = sh.food;
+    for (let i = 0; i < 40; i++) g.updateSheep(1); // 40s parada
+    check(`parada engorda acima de ${SHEEP_FOOD} (era ${antes}, virou ${Math.round(sh.food)})`, sh.food > antes + 5);
+    for (let i = 0; i < 400; i++) g.updateSheep(1); // muito tempo
+    check(`engorda TRAVA no teto ${SHEEP_FOOD_MAX} (ficou ${Math.round(sh.food)})`, Math.abs(sh.food - SHEEP_FOOD_MAX) < 0.001);
+  } else {
+    check('(sem ovelha p/ teste de engorda)', false);
+  }
+}
+
+// (11) NÃO engorda: andando (pastoreio), sendo comida, ou já carcaça.
+{
+  const all = [...g.sheep.values()];
+  const moving = all[0], carcass = all[1];
+  if (moving && carcass) {
+    for (const u of g.units.values()) u.gatherTargetId = undefined;
+    // andando: path setado + comida abaixo do teto
+    moving.owner = 1; moving.food = SHEEP_FOOD; moving.path = [{ x: moving.x + 5, y: moving.y }];
+    const fMov = moving.food;
+    g.updateSheep(2);
+    check('ovelha ANDANDO não engorda', moving.food <= fMov + 0.001);
+    // sendo comida (tended): um aldeão coletando ela
+    const eater = [...g.units.values()].find((u: any) => u.type === 'villager');
+    moving.path = []; moving.food = SHEEP_FOOD;
+    eater.gatherTargetId = moving.id; eater.state = 'gathering';
+    const fEat = moving.food;
+    g.updateSheep(2);
+    check('ovelha sendo comida não engorda', moving.food <= fEat + 0.001);
+    eater.gatherTargetId = undefined;
+    // carcaça (<100): apodrece, não engorda
+    carcass.owner = 1; carcass.food = 40; carcass.path = [];
+    g.updateSheep(1);
+    check('carcaça (<100) apodrece, não engorda', carcass.food < 40);
+  } else {
+    check('(sem ovelhas p/ teste de não-engorda)', false);
   }
 }
 

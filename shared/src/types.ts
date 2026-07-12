@@ -114,6 +114,7 @@ export interface PlayerInfo {
   id: number;
   name: string;
   color: string;
+  team?: number; // 0/ausente = sozinho; 1/2 = time (aliados)
 }
 
 export interface MapData {

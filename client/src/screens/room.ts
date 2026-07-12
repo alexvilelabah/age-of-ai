@@ -13,6 +13,7 @@ export interface RoomScreenDeps {
   onChat: (text: string) => void;
   onAddBot: (difficulty: BotDifficulty) => void;
   onRemoveBot: () => void;
+  onSetTeam: (playerId: number, team: number) => void;
   onSetMode: (mode: GameMode) => void;
 }
 
@@ -187,6 +188,14 @@ export class RoomScreen {
         row.appendChild(el('span', 'bot-diff', t(`room.diff_${p.difficulty ?? 'normal'}`)));
       }
       if (p.isHost) row.appendChild(el('span', '', '👑'));
+      // TIME (estilo AoE): chip por vaga; só o host alterna (— -> 1 -> 2 -> —).
+      const meHost = this.players.find((x) => x.id === this.myId)?.isHost ?? false;
+      const team = p.team ?? 0;
+      const teamBtn = el('button', `btn team-chip t${team}`, `${t('room.team')} ${team === 0 ? '—' : team}`);
+      teamBtn.title = t('room.team_tip');
+      teamBtn.disabled = !meHost;
+      teamBtn.addEventListener('click', () => this.deps.onSetTeam(p.id, (team + 1) % 3));
+      row.appendChild(teamBtn);
       const tag = el('span', `ready-tag ${p.ready ? 'yes' : 'no'}`, p.ready ? t('room.tag_ready') : t('room.tag_waiting'));
       row.appendChild(tag);
       this.rowsEl.appendChild(row);

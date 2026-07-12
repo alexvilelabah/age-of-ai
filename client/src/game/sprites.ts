@@ -29,7 +29,10 @@ const BUILDING_SPRITES: Partial<Record<BuildingType, SpriteFit>> = {
   market: { file: 'market.png', scale: 1.15, dropY: 0.3 },
   house: { file: 'house.png', scale: 1.3, dropY: 0.28 },
   stable: { file: 'stable.png', scale: 1.1, dropY: 0.3 },
-  town_center: { file: 'town_center.png', scale: 1.05, dropY: 0.3 },
+  // CC calibrado por MEDIÇÃO dos PNGs (conteúdo ocupa ~97,4% da largura, ~1,5%
+  // de folga embaixo, consistente nas 4 eras): scale 1.0 => base casa com os
+  // cantos do losango; dropY 0.15 => base no canto frontal (antes afundava).
+  town_center: { file: 'town_center.png', scale: 1.0, dropY: 0.15 },
   barracks: { file: 'barracks.png', scale: 1.1, dropY: 0.3 },
   blacksmith: { file: 'blacksmith.png', scale: 1.35, dropY: 0.22 },
   archery_range: { file: 'archery_range.png', scale: 1.15, dropY: 0.3 },
@@ -40,10 +43,6 @@ const BUILDING_SPRITES: Partial<Record<BuildingType, SpriteFit>> = {
   // estava boa; o muro é tile 1×1 que se repete/conecta em qualquer direção — sprite
   // reto só bateria numa diagonal (precisaria de set direcional + lógica de vizinho).
 };
-
-// Tamanho RELATIVO por era: o prédio CRESCE a cada upgrade. A última era (4) é o
-// tamanho "normal" (×1); as anteriores aparecem menores. (índice = era; 0 não usado)
-const ERA_SIZE = [1, 0.72, 0.82, 0.91, 1.0];
 
 export class Sprites {
   // por tipo: mapa era->img (era 0 = arquivo base, reserva universal)
@@ -76,11 +75,12 @@ export class Sprites {
    *  Preferência: era exata → era inferior mais próxima → base. */
   get(type: BuildingType, age = 1): { img: HTMLImageElement; fit: SpriteFit } | null {
     const perEra = this.imgs.get(type);
-    const baseFit = this.fits.get(type);
-    if (!perEra || !baseFit) return null;
-    // aplica o crescimento por era na escala (era atual do dono, não a do arquivo usado)
-    const mul = ERA_SIZE[Math.min(MAX_AGE, Math.max(1, age))] ?? 1;
-    const fit = mul === 1 ? baseFit : { ...baseFit, scale: baseFit.scale * mul };
+    const fit = this.fits.get(type);
+    if (!perEra || !fit) return null;
+    // Sem crescimento por era: o prédio preenche o footprint em TODAS as eras
+    // (fit.scale já é o tamanho "cheio"). Antes ele encolhia na Era 1 e ficava
+    // menor que o quadrado de seleção. A ARTE ainda pode mudar por era abaixo
+    // (variantes <type>_<era>.png); só o encolhimento saiu.
     for (let a = age; a >= 1; a--) { const img = perEra.get(a); if (img) return { img, fit }; }
     const b = perEra.get(0);
     return b ? { img: b, fit } : null;

@@ -37,6 +37,7 @@ let lastRoomPlayers: RoomPlayer[] = [];
 let pendingName = ''; // nome sendo confirmado (salvo no localStorage quando o servidor aceita)
 
 let gameScreen: GameScreen | null = null;
+let gamePaused = false; // partida pausada (autoritativo do servidor); tecla P alterna
 const gameOverScreen = new GameOverScreen({
   onBackToLobby: () => {
     gameOverScreen.hide();
@@ -115,6 +116,7 @@ const roomScreen = new RoomScreen({
   onChat: (text) => net.send({ type: 'chat', text }),
   onAddBot: (difficulty) => net.send({ type: 'addBot', difficulty }),
   onRemoveBot: () => net.send({ type: 'removeBot' }),
+  onSetTeam: (playerId, team) => net.send({ type: 'setTeam', playerId, team }),
   onSetMode: (mode) => net.send({ type: 'setMode', mode }),
 });
 
@@ -239,9 +241,11 @@ function dispatch(msg: ServerMessage): void {
     case 'gameStart': {
       teardownGame();
       gameOverScreen.hide();
+      gamePaused = false;
       gameScreen = new GameScreen(msg.map, msg.players, msg.you, {
         onCommand: (cmd: GameCommand) => net.send({ type: 'cmd', cmd }),
         onChat: (text) => net.send({ type: 'chat', text }),
+        onTogglePause: () => net.send({ type: 'setPause', paused: !gamePaused }),
         onBackToLobby: () => {
           teardownGame();
           showScreen('lobby');
@@ -249,6 +253,11 @@ function dispatch(msg: ServerMessage): void {
         },
       });
       showScreen('game');
+      break;
+    }
+    case 'gamePaused': {
+      gamePaused = msg.paused;
+      gameScreen?.setPaused(msg.paused, msg.by);
       break;
     }
     case 'snapshot': {
@@ -266,7 +275,7 @@ function dispatch(msg: ServerMessage): void {
       break;
     }
     case 'gameOver': {
-      const youWon = msg.winner === myPlayerId;
+      const youWon = msg.won ?? (msg.winner === myPlayerId);
       gameOverScreen.show(youWon, msg.winnerName);
       music.setState('end'); // música de fim de jogo
       break;

@@ -65,6 +65,8 @@ export class GameState {
   snapTime = 0;
 
   private prevPos = new Map<number, { x: number; y: number }>();
+  private sheepFacingDirs = new Map<number, { x: number; y: number }>();
+  private unitFacings = new Map<number, 1 | -1>();
   /** Nós que sumiram do snapshot (recurso esgotou) — para a animação de queda. */
   removedNodes: { node: NodeSnap; at: number }[] = [];
   /** Ovelhas que sumiram (comidas) — para o "poof". */
@@ -113,12 +115,26 @@ export class GameState {
     const now = this.snapTime;
     const newUnits = new Map<number, UnitSnap>();
     for (const u of Array.isArray(snap.units) ? snap.units : []) {
-      if (u && typeof u.id === 'number') newUnits.set(u.id, u);
+      if (u && typeof u.id === 'number') {
+        newUnits.set(u.id, u);
+        const prev = this.prevPos.get(u.id);
+        if (prev) {
+          const dx = u.x - prev.x;
+          const dy = u.y - prev.y;
+          const screenDx = dx - dy;
+          const screenDy = (dx + dy) * 0.5;
+          // Quase vertical na tela mantém a orientação anterior, evitando piscar.
+          if (Math.abs(screenDx) > Math.max(0.0001, Math.abs(screenDy) * 0.2)) {
+            this.unitFacings.set(u.id, screenDx > 0 ? 1 : -1);
+          }
+        }
+      }
     }
     for (const [id, old] of this.units) {
       const nu = newUnits.get(id);
       if (!nu) {
         this.deaths.push({ unit: old, at: now });
+        this.unitFacings.delete(id);
       } else if (nu.hp < old.hp) {
         this.hits.push({ x: nu.x, y: nu.y, amount: old.hp - nu.hp, at: now });
         this.lastHit.set(id, now);
@@ -174,10 +190,25 @@ export class GameState {
     // Ovelhas que sumiram (comidas) → "poof".
     const newSheepIds = new Set<number>();
     for (const s of Array.isArray(snap.sheep) ? snap.sheep : []) {
-      if (s && typeof s.id === 'number') newSheepIds.add(s.id);
+      if (s && typeof s.id === 'number') {
+        newSheepIds.add(s.id);
+        const prev = this.prevPos.get(s.id);
+        if (prev) {
+          const dx = s.x - prev.x;
+          const dy = s.y - prev.y;
+          if (dx * dx + dy * dy > 0.000001) {
+            const facing = this.sheepFacingDirs.get(s.id);
+            if (facing) { facing.x = dx; facing.y = dy; }
+            else this.sheepFacingDirs.set(s.id, { x: dx, y: dy });
+          }
+        }
+      }
     }
     for (const [id, s] of this.sheep) {
-      if (!newSheepIds.has(id)) this.removedSheep.push({ sheep: s, at: this.snapTime });
+      if (!newSheepIds.has(id)) {
+        this.removedSheep.push({ sheep: s, at: this.snapTime });
+        this.sheepFacingDirs.delete(id);
+      }
     }
     this.removedSheep = this.removedSheep.filter((r) => r.at > this.snapTime - 900);
     this.sheep.clear();
@@ -209,6 +240,11 @@ export class GameState {
     return { x: prev.x + (u.x - prev.x) * t, y: prev.y + (u.y - prev.y) * t };
   }
 
+  /** Último lado horizontal claro para o qual a unidade caminhou na tela. */
+  unitFacing(u: UnitSnap): 1 | -1 | undefined {
+    return this.unitFacings.get(u.id);
+  }
+
   /** Posição interpolada de uma ovelha (parada na Fase 1; anda na Fase 2). */
   sheepPos(s: SheepSnap, now: number): { x: number; y: number } {
     const prev = this.prevPos.get(s.id);
@@ -217,6 +253,11 @@ export class GameState {
     if (t < 0) t = 0;
     if (t > 1) t = 1;
     return { x: prev.x + (s.x - prev.x) * t, y: prev.y + (s.y - prev.y) * t };
+  }
+
+  /** Última direção de movimento, mantida enquanto a ovelha está parada. */
+  sheepFacing(s: SheepSnap): { x: number; y: number } | undefined {
+    return this.sheepFacingDirs.get(s.id);
   }
 
   /** true se a ovelha é selvagem (branca, sem dono). */

@@ -20,7 +20,7 @@ import {
   MAX_AGE,
   NODE_DEFS,
   POP_CAP_MAX,
-  SHEEP_FOOD,
+  SHEEP_FOOD_MAX,
   TECH_DEFS,
   TRADE_LOT,
   TRAIN_QUEUE_MAX,
@@ -461,7 +461,7 @@ export class Hud {
     const owner = this.gs.isWildSheep(s) ? undefined : this.gs.colorOf(s.owner);
     this.selPanel.appendChild(this.titleRow('🐑', t('sheep.name'), owner));
     this.selPanel.appendChild(
-      el('div', 'sel-line', t('hud.remaining', { amt: Math.ceil(s.food), total: SHEEP_FOOD, icon: '🍖' })),
+      el('div', 'sel-line', t('hud.remaining', { amt: Math.ceil(s.food), total: SHEEP_FOOD_MAX, icon: '🍖' })),
     );
   }
 

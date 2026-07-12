@@ -33,7 +33,9 @@ import {
   SHEEP_CONVERT_RANGE,
   SHEEP_CONVERT_EVERY_TICKS,
   SHEEP_DECAY_PER_S,
+  SHEEP_FATTEN_PER_S,
   SHEEP_FOOD,
+  SHEEP_FOOD_MAX,
   SHEEP_WILD_OWNER,
   SHEEP_SPEED,
   carryCapacity,
@@ -75,6 +77,7 @@ export interface RoomMember {
   color: string;
   isBot?: boolean;
   difficulty?: BotDifficulty; // só bots
+  team?: number; // 0/ausente = sozinho; 1/2 = time
 }
 
 export type SendFn = (playerId: number, msg: ServerMessage) => void;
@@ -89,7 +92,10 @@ export class Game {
   players = new Map<number, GamePlayer>();
   private nextId: number;
   private tick = 0;
+  private paused = false;
   private queue: QueuedCmd[] = [];
+  /** Última vez que a BASE (prédio) de cada jogador levou dano — p/ aliados protetores. */
+  readonly recentAttacks = new Map<number, { x: number; y: number; tick: number }>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private ended = false;
   readonly botIds = new Set<number>();
@@ -130,6 +136,7 @@ export class Game {
         age: battle ? BATTLE_STARTING_AGE : 1,
         techs: new Set<string>(),
         difficulty: m.difficulty,
+        team: m.team,
       });
       if (m.isBot) this.botIds.add(m.id);
     });
@@ -162,6 +169,35 @@ export class Game {
 
   enqueueCommand(playerId: number, cmd: GameCommand): void {
     this.queue.push({ playerId, cmd });
+  }
+
+  /** true se os dois jogadores são ALIADOS (mesmo jogador, ou mesmo time > 0).
+   *  Sem time (0/undefined) = "cada um por si". Usado por combate/torres/IA. */
+  allied(a: number, b: number): boolean {
+    if (a === b) return true;
+    const ta = this.players.get(a)?.team ?? 0;
+    const tb = this.players.get(b)?.team ?? 0;
+    return ta > 0 && ta === tb;
+  }
+
+  /** Pausa/retoma a partida para TODOS (qualquer jogador, tecla P). Enquanto
+   *  pausada, o `step` não avança nada (nem snapshots) — todo mundo congela
+   *  igual. Sem timer nem votação: quem quiser retomar aperta P (social). */
+  setPaused(playerId: number, paused: boolean): void {
+    if (this.ended || this.paused === paused) return;
+    this.paused = paused;
+    const by = this.players.get(playerId)?.name ?? '';
+    for (const p of this.players.values()) this.send(p.id, { type: 'gamePaused', paused, by });
+  }
+
+  /** Estado atual do pause (p/ reenviar a quem reconecta no meio da pausa). */
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
+  /** Tick atual (p/ a IA medir "há quanto tempo" — ex.: socorro a aliados). */
+  get tickNow(): number {
+    return this.tick;
   }
 
   /** Marca um jogador como derrotado (desconexão) e remove suas entidades. */
@@ -199,7 +235,7 @@ export class Game {
   // ---------------- Tick ----------------
 
   private step(): void {
-    if (this.ended) return;
+    if (this.ended || this.paused) return; // pausada: congela tudo (sem avanço, sem snapshot)
     const dt = TICK_MS / 1000;
     this.tick++;
 
@@ -338,17 +374,25 @@ export class Game {
   private checkVictory(): void {
     if (this.ended) return;
     const alive = [...this.players.values()].filter((p) => !p.defeated);
+    // Vitória por LADOS: cada time (>0) é um lado; sem time, cada jogador é o
+    // próprio lado. Acaba quando resta <= 1 lado vivo (aliados vencem juntos).
+    const sides = new Set(alive.map((p) => (p.team && p.team > 0 ? `t${p.team}` : `p${p.id}`)));
     // Solo (sandbox/treino): o jogo só termina se o único jogador for derrotado
     // (senão ele ficaria preso num mapa vazio sem tela de fim).
-    const over = this.players.size > 1 ? alive.length <= 1 : alive.length === 0;
+    const over = this.players.size > 1 ? sides.size <= 1 : alive.length === 0;
     if (over) {
       this.ended = true;
       const winner = alive[0];
-      const msg: ServerMessage = winner
-        ? { type: 'gameOver', winner: winner.id, winnerName: winner.name }
-        : { type: 'gameOver', winner: -1, winnerName: '' };
-      for (const p of this.players.values()) this.send(p.id, msg);
-      this.onGameOver(winner ? winner.id : -1, winner ? winner.name : '');
+      const winnerName = alive.length > 1 ? alive.map((p) => p.name).join(' + ') : winner?.name ?? '';
+      for (const p of this.players.values()) {
+        // `won` individual: aliados do lado vencedor também veem "Vitória!"
+        // (mesmo um aliado já derrotado — o TIME dele venceu).
+        const won = winner ? this.allied(p.id, winner.id) : false;
+        this.send(p.id, winner
+          ? { type: 'gameOver', winner: winner.id, winnerName, won }
+          : { type: 'gameOver', winner: -1, winnerName: '', won: false });
+      }
+      this.onGameOver(winner ? winner.id : -1, winnerName);
     }
   }
 
@@ -1137,8 +1181,8 @@ export class Game {
     if (units.length === 0) return;
     const targetUnit = this.units.get(targetId);
     const targetBuilding = this.buildings.get(targetId);
-    const isEnemyUnit = targetUnit && targetUnit.owner !== playerId;
-    const isEnemyBuilding = targetBuilding && targetBuilding.owner !== playerId;
+    const isEnemyUnit = targetUnit && !this.allied(targetUnit.owner, playerId);
+    const isEnemyBuilding = targetBuilding && !this.allied(targetBuilding.owner, playerId);
     if (!isEnemyUnit && !isEnemyBuilding) return;
     for (const u of units) {
       this.clearTasks(u);
@@ -1210,6 +1254,9 @@ export class Game {
     const b = this.buildings.get(targetId);
     if (b) {
       b.hp -= atk; // prédios não têm blindagem de upgrade
+      // registra "base do fulano apanhando" — bots ALIADOS protetores leem isto
+      const bs = BUILDING_DEFS[b.type].size;
+      this.recentAttacks.set(b.owner, { x: b.tileX + bs / 2, y: b.tileY + bs / 2, tick: this.tick });
       if (b.hp <= 0) {
         this.unblockFootprint(b.tileX, b.tileY, BUILDING_DEFS[b.type].size);
         this.buildings.delete(targetId);
@@ -1354,6 +1401,9 @@ export class Game {
       if (s.food < SHEEP_FOOD && !eating.has(s.id)) {
         s.food -= SHEEP_DECAY_PER_S * dt;
         if (s.food <= 0) this.sheep.delete(s.id);
+      } else if (s.food < SHEEP_FOOD_MAX && s.path.length === 0 && !eating.has(s.id)) {
+        // Ovelha saudável e PARADA (ninguém comendo) engorda devagar até o teto.
+        s.food = Math.min(SHEEP_FOOD_MAX, s.food + SHEEP_FATTEN_PER_S * dt);
       }
     }
 
@@ -1384,8 +1434,12 @@ export class Game {
           bestOwner = u.owner;
         }
       }
-      // sem unidade no raio: mantém o dono (fica sua até alguém chegar mais perto)
-      if (bestOwner !== SHEEP_WILD_OWNER && bestOwner !== s.owner) s.owner = bestOwner;
+      // sem unidade no raio: mantém o dono (fica sua até alguém chegar mais perto).
+      // ALIADO não "rouba" a sua ovelha (só inimigo contesta; selvagem é de quem chegar).
+      if (bestOwner !== SHEEP_WILD_OWNER && bestOwner !== s.owner
+        && !(s.owner !== SHEEP_WILD_OWNER && this.allied(bestOwner, s.owner))) {
+        s.owner = bestOwner;
+      }
     }
   }
 
@@ -1458,13 +1512,16 @@ export class Game {
       }
       return;
     }
+    // Bot FÁCIL: soldados NÃO perseguem — seguram posição (a IA original "não
+    // atacava"). Torres e Centro da Vila do bot ainda defendem a base sozinhos.
+    if (this.players.get(u.owner)?.difficulty === 'easy') return;
     if (u.aggroTimer > 0) return;
     u.aggroTimer = 0.5; // ~2x/s
     const sight = UNIT_DEFS[u.type].sight;
     let bestId: number | null = null;
     let bestD = Infinity;
     for (const other of this.units.values()) {
-      if (other.owner === u.owner) continue;
+      if (this.allied(other.owner, u.owner)) continue;
       const d = Math.hypot(other.x - u.x, other.y - u.y);
       if (d <= sight && d < bestD) {
         bestD = d;
@@ -1473,7 +1530,7 @@ export class Game {
     }
     if (bestId === null) {
       for (const b of this.buildings.values()) {
-        if (b.owner === u.owner) continue;
+        if (this.allied(b.owner, u.owner)) continue;
         const size = BUILDING_DEFS[b.type].size;
         const nx = Math.max(b.tileX, Math.min(u.x, b.tileX + size - 1));
         const ny = Math.max(b.tileY, Math.min(u.y, b.tileY + size - 1));
@@ -1628,12 +1685,12 @@ export class Game {
       const cy = b.tileY + size / 2;
       // mantém o alvo atual enquanto vivo e no alcance; senão procura outro
       let target = b.targetId !== undefined ? this.units.get(b.targetId) : undefined;
-      if (!target || target.owner === b.owner || Math.hypot(target.x - cx, target.y - cy) > range) {
+      if (!target || this.allied(target.owner, b.owner) || Math.hypot(target.x - cx, target.y - cy) > range) {
         target = undefined;
         b.targetId = undefined;
         let bestD = range;
         for (const u of this.units.values()) {
-          if (u.owner === b.owner) continue;
+          if (this.allied(u.owner, b.owner)) continue;
           const d = Math.hypot(u.x - cx, u.y - cy);
           if (d <= bestD) {
             bestD = d;
@@ -1656,7 +1713,7 @@ export class Game {
         } else {
           // guarnecido: dispara nos N inimigos mais próximos (defesa de área)
           const enemies = [...this.units.values()]
-            .filter((e) => e.owner !== b.owner)
+            .filter((e) => !this.allied(e.owner, b.owner))
             .map((e) => ({ e, d: Math.hypot(e.x - cx, e.y - cy) }))
             .filter((o) => o.d <= range)
             .sort((a, z) => a.d - z.d)
@@ -1918,7 +1975,7 @@ export class Game {
   }
 
   toPlayerInfos(): PlayerInfo[] {
-    return [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color }));
+    return [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, team: p.team }));
   }
 }
 

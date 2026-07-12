@@ -63,10 +63,12 @@ export type ClientMessage =
   | { type: 'joinRoom'; roomId: string }
   | { type: 'leaveRoom' }
   | { type: 'setReady'; ready: boolean }
+  | { type: 'setTeam'; playerId: number; team: number } // apenas host: time da vaga (0 = sozinho, 1/2 = time)
   | { type: 'addBot'; difficulty?: BotDifficulty } // apenas host: adiciona um oponente de IA à sala
   | { type: 'removeBot' } // apenas host: remove o último bot
   | { type: 'startGame' } // apenas host
   | { type: 'chat'; text: string }
+  | { type: 'setPause'; paused: boolean } // pausar/despausar a partida (qualquer jogador, tecla P)
   | { type: 'cmd'; cmd: GameCommand };
 
 // ---------- Servidor -> Cliente ----------
@@ -87,6 +89,7 @@ export interface RoomPlayer {
   color: string;
   isBot?: boolean;
   difficulty?: BotDifficulty; // só bots
+  team?: number; // 0/ausente = sozinho (cada um por si); 1/2 = time
 }
 
 export type ServerMessage =
@@ -113,4 +116,7 @@ export type ServerMessage =
       /** Preços do mercado (ouro por lote de 100) — globais da sala. */
       market: MarketPrices;
     }
-  | { type: 'gameOver'; winner: number; winnerName: string };
+  // `won` (opcional) diz se VOCÊ venceu — necessário em times (vitória em dupla).
+  | { type: 'gameOver'; winner: number; winnerName: string; won?: boolean }
+  // Partida pausada/retomada (para TODOS da sala). `by` = quem mexeu (mostra na tela).
+  | { type: 'gamePaused'; paused: boolean; by: string };

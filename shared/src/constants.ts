@@ -323,7 +323,9 @@ export const NODE_DEFS: Record<NodeType, NodeDef> = {
 
 // ---------- Ovelhas (comida do início, estilo AoE) ----------
 export const SHEEP_WILD_OWNER = -1;   // dono sentinela = selvagem (branca)
-export const SHEEP_FOOD = 100;        // comida por ovelha
+export const SHEEP_FOOD = 100;        // comida por ovelha (também: fronteira "saudável ≥100 / carcaça <100")
+export const SHEEP_FOOD_MAX = 150;    // teto: ovelha saudável e PARADA engorda até aqui
+export const SHEEP_FATTEN_PER_S = 0.5; // comida/s ganha ao engordar parada (devagar; decay é 2/s)
 export const SHEEP_CONVERT_RANGE = 3.0; // tiles: unidade mais perta que isto "rouba" a ovelha
 export const SHEEP_CONVERT_EVERY_TICKS = 5; // varre conversão 2x/s (TICK_RATE=10)
 export const SHEEP_SPEED = 0.7;       // tiles/s quando pastoreada (Fase 2)

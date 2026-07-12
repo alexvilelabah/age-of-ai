@@ -16,6 +16,7 @@ export interface InputDeps {
   onBuildCommand: (type: BuildingType, tileX: number, tileY: number, unitIds: number[], queue: boolean) => void;
   onCenterHome: () => void;
   onIdleVillager: (all?: boolean) => void;
+  onTogglePause: () => void;
   isChatOpen: () => boolean;
   openChat: () => void;
 }
@@ -46,6 +47,7 @@ export class GameInput {
   private dragSelecting = false;
   private dragAdditive = false;
   private lastFrameT = 0;
+  private paused = false; // partida pausada: bloqueia comandos/câmera (só P e chat passam)
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -59,21 +61,28 @@ export class GameInput {
     this.bind();
   }
 
+  /** Liga/desliga o bloqueio de input do jogo (chamado quando a partida pausa). */
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    if (paused) this.keysDown.clear(); // solta teclas de câmera presas
+  }
+
   private bind(): void {
     const c = this.canvas;
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('mousedown', this.onMouseDown);
     window.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('mouseup', this.onMouseUp);
-    c.addEventListener('mouseleave', () => {
-      this.ui.hasMouse = false;
-    });
+    // Sem handler de mouseleave DE PROPÓSITO ("latch", pedido do dono): se o
+    // cursor sai da janela empurrando uma borda, a rolagem CONTINUA naquela
+    // direção (última posição conhecida fica na zona). Ela para quando o mouse
+    // volta um pouco pra dentro (mousemove atualiza a posição) ou no blur.
     c.addEventListener('mouseenter', () => {
       this.ui.hasMouse = true;
     });
     // duplo clique numa unidade própria: seleciona todas do mesmo tipo na tela (AoE2)
     c.addEventListener('dblclick', (e) => {
-      if (this.deps.isChatOpen() || this.ui.placement) return;
+      if (this.deps.isChatOpen() || this.ui.placement || this.paused) return;
       this.selectAllOfTypeAt(this.canvasPos(e));
     });
     window.addEventListener('keydown', this.onKeyDown);
@@ -102,7 +111,7 @@ export class GameInput {
     if (this.lastFrameT === 0) this.lastFrameT = now;
     const dt = Math.min(0.1, (now - this.lastFrameT) / 1000);
     this.lastFrameT = now;
-    if (this.deps.isChatOpen()) return;
+    if (this.deps.isChatOpen() || this.paused) return; // pausado: câmera congela também
 
     let dx = 0;
     let dy = 0;
@@ -123,8 +132,10 @@ export class GameInput {
     // rolagem pela borda da tela (estilo AoE2): a câmera anda no sentido da
     // borda onde o mouse encosta — as QUATRO bordas ABSOLUTAS da janela, como
     // no jogo original (a de baixo dispara no fundo da tela, mesmo sobre o
-    // menu; o MIOLO do menu/minimapa não rola porque não é borda). Desligada
-    // durante seleção (botão esquerdo) e arrasto do meio.
+    // menu; o MIOLO do menu/minimapa não rola porque não é borda). Se o cursor
+    // SAI da janela pela borda, a última posição conhecida segue na zona e a
+    // rolagem CONTINUA (latch); volta um pouco pra dentro => para; blur => para.
+    // Desligada durante seleção (botão esquerdo) e arrasto do meio.
     if (this.ui.hasMouse && !this.leftDown && !this.mmDragging) {
       let ex = 0;
       let ey = 0;
@@ -147,7 +158,7 @@ export class GameInput {
   }
 
   private onMouseDown = (e: MouseEvent): void => {
-    if (this.deps.isChatOpen()) return;
+    if (this.deps.isChatOpen() || this.paused) return;
     const pos = this.canvasPos(e);
     this.lastMouse = pos;
 
@@ -240,6 +251,13 @@ export class GameInput {
       this.deps.openChat();
       return;
     }
+    // P: pausa/despausa (vale até pausado — é como se sai). Só o P e o chat passam na pausa.
+    if (e.key === 'p' || e.key === 'P') {
+      e.preventDefault();
+      this.deps.onTogglePause();
+      return;
+    }
+    if (this.paused) return;
     if (e.key === 'Escape') {
       if (this.ui.placement) {
         this.ui.placement = null;
@@ -377,7 +395,7 @@ export class GameInput {
     // som de seleção específico para cada tipo de objeto
     if (pick.kind === 'unit') this.sfx.selectUnit(pick.unit.type);
     else if (pick.kind === 'building') this.sfx.selectBuilding(pick.building.type);
-    else if (pick.kind === 'sheep') this.sfx.uiClick();
+    else if (pick.kind === 'sheep') this.sfx.selectSheep();
     else this.sfx.selectNode(pick.node.type);
 
     if (shift) {

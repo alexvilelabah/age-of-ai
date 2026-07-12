@@ -109,6 +109,8 @@ export interface GamePlayer {
   techs: Set<string>;
   /** Só bots: nível de dificuldade (dirige a IA). Humanos = undefined. */
   difficulty?: BotDifficulty;
+  /** Time (0/ausente = sozinho; 1/2 = aliados do mesmo número). */
+  team?: number;
 }
 
 export function createSheep(id: number, x: number, y: number): Sheep {

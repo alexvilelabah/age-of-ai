@@ -4,6 +4,7 @@ import type { GameCommand, MapData, PlayerInfo } from '@age/shared';
 import { BUILDING_DEFS } from '@age/shared';
 import { GameState } from '../state';
 import { el } from '../ui';
+import { t } from '../i18n';
 import { Camera } from '../game/camera';
 import { Hud, type HudDeps } from '../game/hud';
 import { GameInput } from '../game/input';
@@ -18,6 +19,7 @@ import { ConnLostOverlay } from './connlost';
 export interface GameScreenDeps {
   onCommand: (cmd: GameCommand) => void;
   onChat: (text: string) => void;
+  onTogglePause: () => void;
   onBackToLobby: () => void;
 }
 
@@ -34,6 +36,8 @@ export class GameScreen {
   private hudDeps!: HudDeps;
   private input: GameInput;
   private connLost: ConnLostOverlay;
+  private pauseOverlay!: HTMLElement;
+  private pauseBy!: HTMLElement;
 
   private rafId = 0;
   private resizeObserver: ResizeObserver | null = null;
@@ -87,6 +91,16 @@ export class GameScreen {
     this.connLost = new ConnLostOverlay({ onBackToLobby: () => this.deps.onBackToLobby() });
     root.appendChild(this.connLost.el);
 
+    // Overlay de PAUSA (aparece pra todos quando alguém aperta P).
+    this.pauseOverlay = el('div', 'pause-overlay hidden');
+    const pbox = el('div', 'pause-box');
+    pbox.appendChild(el('div', 'pause-title', t('pause.title')));
+    this.pauseBy = el('div', 'pause-by', '');
+    pbox.appendChild(this.pauseBy);
+    pbox.appendChild(el('div', 'pause-hint', t('pause.hint')));
+    this.pauseOverlay.appendChild(pbox);
+    root.appendChild(this.pauseOverlay);
+
     this.renderer = new Renderer(gs);
 
     const uiState = createUIState();
@@ -97,6 +111,7 @@ export class GameScreen {
       },
       onCenterHome: () => this.centerOnHome(),
       onIdleVillager: (all) => all ? this.selectAllIdleVillagers() : this.selectNextIdleVillager(),
+      onTogglePause: () => this.deps.onTogglePause(),
       isChatOpen: () => this.hud.isChatOpen(),
       openChat: () => this.hud.openChat(),
     }, this.sfx);
@@ -119,6 +134,13 @@ export class GameScreen {
     }
 
     this.startLoop();
+  }
+
+  /** Mostra/esconde o overlay de PAUSA e bloqueia o input do jogo enquanto pausado. */
+  setPaused(paused: boolean, by: string): void {
+    this.pauseOverlay.classList.toggle('hidden', !paused);
+    this.pauseBy.textContent = paused && by ? t('pause.by', { name: by }) : '';
+    this.input.setPaused(paused);
   }
 
   /** (Re)cria o HUD com os deps atuais + o som de clique dos botões. */

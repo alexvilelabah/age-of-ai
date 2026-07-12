@@ -271,6 +271,21 @@ export function runBotAI(game: Game, botId: number): void {
       game.enqueueCommand(botId, { kind: 'attack', unitIds: ready.map((u) => u.id), targetId: target.id });
     }
   }
+
+  // ALIADO PROTETOR: a base de um aliado apanhou há pouco? Manda os soldados
+  // ociosos pra lá (chegando, o auto-aggro engaja sozinho). O move tira as
+  // unidades de 'idle', então não re-envia todo tick. Fácil não vai (passivo).
+  if (diff.initiatesAttacks) {
+    for (const [victimId, hit] of game.recentAttacks) {
+      if (victimId === botId || !game.allied(botId, victimId)) continue;
+      if (game.tickNow - hit.tick > 100) continue; // só socorro "fresco" (~10s)
+      const rescuers = military.filter((u) => u.state === 'idle');
+      if (rescuers.length >= 3) {
+        game.enqueueCommand(botId, { kind: 'move', unitIds: rescuers.map((u) => u.id), x: hit.x, y: hit.y });
+      }
+      break;
+    }
+  }
 }
 
 function profileFor(botId: number): BotProfile {
@@ -697,7 +712,8 @@ function nearestEnemyBuilding(game: Game, botId: number, x: number, y: number): 
   let best: Building | null = null;
   let bestDistance = Infinity;
   for (const building of game.buildings.values()) {
-    if (building.owner === botId || game.players.get(building.owner)?.defeated) continue;
+    // pula os próprios, os de ALIADOS e os de derrotados
+    if (game.allied(building.owner, botId) || game.players.get(building.owner)?.defeated) continue;
     const c = buildingCenter(building);
     const d = Math.hypot(c.x - x, c.y - y);
     if (d < bestDistance) { best = building; bestDistance = d; }

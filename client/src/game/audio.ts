@@ -249,6 +249,51 @@ export class Sfx {
     }
   }
 
+  /** Balido curto ao selecionar uma ovelha. */
+  selectSheep(): void {
+    if (this.muted) return;
+    const ctx = this.ac();
+    if (!ctx || !this.master) return;
+    const t0 = ctx.currentTime;
+    const dur = 0.68;
+    const pitch = 0.94 + Math.random() * 0.1;
+    const voice = ctx.createOscillator();
+    const harmonic = ctx.createOscillator();
+    const harmonicGain = ctx.createGain();
+    const tremolo = ctx.createGain();
+    const wobble = ctx.createOscillator();
+    const wobbleDepth = ctx.createGain();
+    const formant = ctx.createBiquadFilter();
+    const envelope = ctx.createGain();
+
+    voice.type = 'sawtooth';
+    voice.frequency.setValueAtTime(205 * pitch, t0);
+    voice.frequency.exponentialRampToValueAtTime(168 * pitch, t0 + dur);
+    harmonic.type = 'triangle';
+    harmonic.frequency.setValueAtTime(410 * pitch, t0);
+    harmonic.frequency.exponentialRampToValueAtTime(336 * pitch, t0 + dur);
+    harmonicGain.gain.value = 0.3;
+    tremolo.gain.value = 0.7;
+    wobble.type = 'sine';
+    wobble.frequency.value = 11.5;
+    wobbleDepth.gain.value = 0.28;
+    formant.type = 'bandpass';
+    formant.frequency.setValueAtTime(760, t0);
+    formant.frequency.exponentialRampToValueAtTime(930, t0 + dur);
+    formant.Q.value = 0.85;
+    envelope.gain.setValueAtTime(0.0001, t0);
+    envelope.gain.linearRampToValueAtTime(0.3, t0 + 0.035);
+    envelope.gain.setValueAtTime(0.25, t0 + dur * 0.68);
+    envelope.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
+
+    voice.connect(tremolo);
+    harmonic.connect(harmonicGain); harmonicGain.connect(tremolo);
+    wobble.connect(wobbleDepth); wobbleDepth.connect(tremolo.gain);
+    tremolo.connect(formant); formant.connect(envelope); envelope.connect(this.master);
+    voice.start(t0); harmonic.start(t0); wobble.start(t0);
+    voice.stop(t0 + dur + 0.02); harmonic.stop(t0 + dur + 0.02); wobble.stop(t0 + dur + 0.02);
+  }
+
   /** Seleção de prédio: baque de pedra (Centro/Ferraria) ou de madeira (resto),
    *  com um leve deslocamento de tom por tipo pra "cada prédio um som". */
   selectBuilding(type?: BuildingType): void {

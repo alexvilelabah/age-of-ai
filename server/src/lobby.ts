@@ -18,6 +18,7 @@ interface RoomPlayerState {
   joinOrder: number;
   isBot?: boolean;
   difficulty?: BotDifficulty; // apenas bots
+  team?: number; // 0/ausente = sozinho; 1/2 = time (host escolhe na sala)
   name?: string; // apenas bots (não têm Connection)
   clientId?: string;   // identidade estável do navegador (p/ reconectar na MESMA partida)
   disconnected?: boolean; // caiu no meio do jogo e a vaga está reservada (aguardando reconexão)
@@ -129,6 +130,9 @@ export class Lobby {
       case 'setReady':
         this.setReady(conn, msg.ready);
         break;
+      case 'setTeam':
+        this.setTeam(conn, msg.playerId, msg.team);
+        break;
       case 'addBot':
         this.addBot(conn, msg.difficulty);
         break;
@@ -140,6 +144,9 @@ export class Lobby {
         break;
       case 'chat':
         this.chat(conn, msg.text);
+        break;
+      case 'setPause':
+        this.setPause(conn, msg.paused);
         break;
       case 'cmd':
         this.cmd(conn, msg);
@@ -229,6 +236,8 @@ export class Lobby {
     conn.send({ type: 'nameOk' });
     if (room.game) {
       conn.send({ type: 'gameStart', map: room.game.map, players: room.game.toPlayerInfos(), you: oldId });
+      // reconectou no meio de uma pausa: já mostra o overlay (senão veria o jogo congelado sem explicação)
+      if (room.game.isPaused) conn.send({ type: 'gamePaused', paused: true, by: '' });
     }
   }
 
@@ -417,6 +426,19 @@ export class Lobby {
     this.broadcastRoomState(room.id);
   }
 
+  /** Host define o TIME de qualquer vaga (0 = sozinho, 1/2 = time). */
+  private setTeam(conn: Connection, playerId: number, team: number): void {
+    if (!conn.roomId) return;
+    const room = this.rooms.get(conn.roomId);
+    if (!room || room.inGame || room.hostId !== conn.id) return;
+    if (team !== 0 && team !== 1 && team !== 2) return;
+    const m = room.members.get(playerId);
+    if (!m) return;
+    m.team = team === 0 ? undefined : team;
+    this.touch(room);
+    this.broadcastRoomState(room.id);
+  }
+
   /** Insere um bot na sala (sem broadcasts). false = sala cheia. */
   private addBotToRoom(room: Room, difficulty?: BotDifficulty): boolean {
     if (room.members.size >= MAX_PLAYERS_PER_ROOM) return false;
@@ -498,6 +520,7 @@ export class Lobby {
         color: PLAYER_COLORS[i % PLAYER_COLORS.length],
         isBot: !!m.isBot,
         difficulty: m.difficulty,
+        team: m.team,
       };
     });
 
@@ -571,6 +594,14 @@ export class Lobby {
     room.game.enqueueCommand(conn.id, msg.cmd);
   }
 
+  /** Pausar/retomar a partida (qualquer jogador da sala). */
+  private setPause(conn: Connection, paused: boolean): void {
+    if (!conn.roomId) return;
+    const room = this.rooms.get(conn.roomId);
+    if (!room || !room.inGame || !room.game) return;
+    room.game.setPaused(conn.id, paused);
+  }
+
   // ---------------- Room list / state broadcasts ----------------
 
   private roomSummaries(): RoomSummary[] {
@@ -609,6 +640,7 @@ export class Lobby {
         color: PLAYER_COLORS[i % PLAYER_COLORS.length],
         isBot: !!m.isBot,
         difficulty: m.difficulty,
+        team: m.team,
       };
     });
     const msg: ServerMessage = { type: 'roomState', roomId, players, mode: room.mode };
