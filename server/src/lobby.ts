@@ -37,6 +37,69 @@ interface Room {
 }
 
 const ROOM_ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+// --- Salas "vitrine" (social proof no início) -----------------------------
+// Enquanto a base de jogadores é pequena, o lobby mostra algumas partidas
+// FICTÍCIAS "em jogo" pra não parecer deserto. São só rótulos na lista: como
+// aparecem como "em jogo", o botão Entrar fica desabilitado no cliente, então
+// ninguém entra e descobre que estão vazias. O conjunto (quantidade, nomes e
+// lotação) é DETERMINÍSTICO pela hora do relógio — muda de hora em hora, sem
+// timer nem custo por tick (é calculado só quando a lista é montada). O
+// endpoint /status continua contando SÓ as salas reais (monitoramento honesto).
+// Mistura proposital: uns "cool" capitalizados, muitos preguiçosos (minúsculo,
+// número, teclado batido) — como um lobby de verdade, não uma lista curada.
+const FAKE_HOST_NAMES = [
+  'drakonz', 'ale12', 'qwer', 'asd', '1234', 'joao123', 'SiegeLord', 'rafa',
+  'ShadowFox', 'pedro_', 'lucas7', 'br123', 'NightRaider', 'gg', 'test123', 'mari',
+  'ElConquistador', 'aaa', 'xX_dark', 'thiago', 'zzz', 'noobmaster', 'gabriel', 'kkkk',
+  'ReiArthur', 'top1', 'player1', 'biel', 'proGamer', '999', 'diego', 'aloxx',
+  'Kratos77', 'zero_', 'mestre', 'guto', 'DarkZ', 'ana_', 'vitor', 'aK47',
+  'PhantomScout', 'gugu', 'rush', 'matheus', 'jvzin', 'dudu', 'Onyxia', 'poko',
+];
+
+/** PRNG determinístico em [0,1) a partir de um inteiro (mesma semente -> mesmo valor). */
+function seededUnit(n: number): number {
+  let x = (n * 2654435761) >>> 0;
+  x ^= x >>> 15; x = (x * 2246822519) >>> 0;
+  x ^= x >>> 13; x = (x * 3266489917) >>> 0;
+  x ^= x >>> 16;
+  return (x >>> 0) / 4294967296;
+}
+
+/**
+ * Salas-vitrine (4 a 6, "em jogo", nomes distintos). Cada VAGA tem o seu próprio
+ * relógio, defasado 10 min da anterior: a vaga i troca de nome no minuto i*10 de
+ * cada hora — ou seja, a cada 10 min UMA sala muda, nunca todas de uma vez. As
+ * vagas 0-3 estão sempre ocupadas (mínimo 4 salas); as vagas 4 e 5 entram/saem a
+ * cada hora (no minuto delas), fazendo o total oscilar 4..6 (às vezes 4). Cada
+ * vaga sorteia o nome do SEU grupo (blocos disjuntos do pool) e avança 1 por
+ * hora — então muda toda hora sem depender das outras (staggering limpo).
+ */
+export function generateFakeRooms(nowMs: number, maxPlayers: number): RoomSummary[] {
+  const HOUR = 3_600_000;
+  const STAGGER = 10 * 60_000; // 10 min entre a troca de uma sala e a seguinte
+  const GROUP = Math.floor(FAKE_HOST_NAMES.length / 6); // 6 grupos disjuntos de nomes
+  const out: RoomSummary[] = [];
+  for (let i = 0; i < 6; i++) {
+    // relógio da vaga: vira 1x/hora, mas defasado i*10min do vizinho
+    const bucket = Math.floor((nowMs - i * STAGGER) / HOUR);
+    // vagas 4 e 5 só aparecem em ~metade das horas -> total oscila entre 4 e 6
+    if (i >= 4 && seededUnit(bucket * 2600 + i * 17 + 9) < 0.5) continue;
+    // nome do grupo da vaga (grupos não se cruzam -> nunca repete entre salas),
+    // avançando 1 por hora (cicla os do grupo) -> muda toda hora
+    const k = i * GROUP + (((bucket + i * 3) % GROUP) + GROUP) % GROUP;
+    const pc = 2 + Math.floor(seededUnit(bucket * 977 + i * 13) * (maxPlayers - 1)); // 2..max
+    out.push({
+      id: `live-${i}-${bucket}`, // não colide com id real (6 chars maiúsculos)
+      hostName: FAKE_HOST_NAMES[k],
+      playerCount: Math.min(pc, maxPlayers),
+      maxPlayers,
+      inGame: true, // "fechado": aparece em andamento, Entrar fica desabilitado
+    });
+  }
+  return out;
+}
+
 /** Quanto tempo a vaga de um jogador fica reservada após ele cair no meio da
  *  partida — se ele reconectar (mesmo clientId) dentro disso, retoma o jogo de
  *  onde estava; senão, é dado como derrotado. Ajustável via env (útil em testes). */
@@ -647,13 +710,15 @@ export class Lobby {
   // ---------------- Room list / state broadcasts ----------------
 
   private roomSummaries(): RoomSummary[] {
-    return [...this.rooms.values()].map((r) => ({
+    const real = [...this.rooms.values()].map((r) => ({
       id: r.id,
       hostName: this.conns.get(r.hostId)?.name ?? 'Jogador',
       playerCount: r.members.size,
       maxPlayers: MAX_PLAYERS_PER_ROOM,
       inGame: r.inGame,
     }));
+    // Salas reais primeiro (as que dá pra entrar ficam no topo); vitrine embaixo.
+    return [...real, ...generateFakeRooms(Date.now(), MAX_PLAYERS_PER_ROOM)];
   }
 
   private sendRoomListTo(conn: Connection): void {
