@@ -1006,6 +1006,21 @@ export class Game {
       return;
     }
 
+    // Casa NOVA além do teto de população é desperdício (a moradia não passa de
+    // POP_CAP_MAX): recusa. Obras em andamento contam (vão prover ao terminar).
+    // O cliente já mostra o botão apagado e o fantasma vermelho; aqui é a
+    // validação de verdade. (Os bots nunca caem aqui: a IA checa o teto antes.)
+    if (type === 'house') {
+      let provided = 0;
+      for (const b of this.buildings.values()) {
+        if (b.owner === playerId) provided += BUILDING_DEFS[b.type].popProvided;
+      }
+      if (provided >= POP_CAP_MAX) {
+        this.errorTo(playerId, 'err.house_cap', { max: POP_CAP_MAX });
+        return;
+      }
+    }
+
     if (!this.validFootprint(tileX, tileY, def.size)) {
       this.errorTo(playerId, 'err.bad_build_location');
       return;

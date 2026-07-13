@@ -19,6 +19,7 @@ import {
   BUILDING_DEFS,
   BUILDING_VISION,
   BUILDING_VISION_DEFAULT,
+  POP_CAP_MAX,
   SHEEP_VISION,
   SHEEP_WILD_OWNER,
   SNAPSHOT_TICKS,
@@ -515,9 +516,23 @@ export class GameState {
    * dentro do mapa, todos os tiles de grama JÁ EXPLORADOS (estilo AoE — não se
    * constrói no escuro), sem sobrepor prédios ou nós.
    */
+  /** Moradia minha somada (popProvided), contando obras em andamento — elas vão
+   *  prover quando prontas, então já "reservam" o teto. */
+  housingProvided(): number {
+    let total = 0;
+    for (const b of this.buildings.values()) {
+      if (b.owner === this.you) total += BUILDING_DEFS[b.type]?.popProvided ?? 0;
+    }
+    return total;
+  }
+
   canPlace(type: BuildingType, tileX: number, tileY: number): boolean {
     const def = BUILDING_DEFS[type];
     if (!def) return false;
+    // Casa além do teto de população (POP_CAP_MAX) é madeira jogada fora: o
+    // fantasma fica VERMELHO e o clique não cola — feedback imediato de que o
+    // limite chegou (o botão do menu também apaga; o servidor valida igual).
+    if (type === 'house' && this.housingProvided() >= POP_CAP_MAX) return false;
     if (!Number.isInteger(tileX) || !Number.isInteger(tileY)) return false;
     const s = def.size;
     const mapSize = this.map.size;
