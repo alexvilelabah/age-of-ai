@@ -478,7 +478,10 @@ export class Hud {
       const def = BUILDING_DEFS[b.type];
       const hasTechs = TECH_DEFS.some((t) => t.building === b.type);
       if (def && (b.progress ?? 1) >= 1 && (def.trains.length > 0 || hasTechs)) {
-        return { key: `train:${b.id}`, building: b };
+        // O N entra na chave pro painel reconstruir quando a multi-seleção
+        // muda de tamanho (senão o "×N" do título ficaria desatualizado).
+        const n = gs.selectedOwnBuildings().filter((x) => x.type === b.type && (x.progress ?? 1) >= 1).length;
+        return { key: `train:${b.id}x${n}`, building: b };
       }
       if ((b.progress ?? 1) < 1) return { key: 'hint:construction' };
       if (b.type === 'farm') return { key: 'hint:farm' };
@@ -555,8 +558,12 @@ export class Hud {
       const trains = def?.trains ?? [];
       const techs = TECH_DEFS.filter((t) => t.building === b.type);
       this.trainBuildingId = b.id;
+      // Multi-seleção (duplo-clique): todos os prédios próprios PRONTOS do
+      // mesmo tipo. O treino é enfileirado em TODOS; o painel mostra "×N".
+      const sameType = this.gs.selectedOwnBuildings().filter((bb) => bb.type === b.type && (bb.progress ?? 1) >= 1);
+      const countSuffix = sameType.length > 1 ? ` ×${sameType.length}` : '';
       const verb = trains.length ? t('hud.train') : t('hud.research_verb');
-      this.actPanel.appendChild(el('div', 'act-title', `${verb} — ${BUILDING_NAMES[b.type] ?? b.type}`));
+      this.actPanel.appendChild(el('div', 'act-title', `${verb} — ${BUILDING_NAMES[b.type] ?? b.type}${countSuffix}`));
       const grid = el('div', 'cmd-grid');
       for (const unit of trains) {
         const udef = UNIT_DEFS[unit];
@@ -566,11 +573,15 @@ export class Hud {
         btn.appendChild(el('span', 'ico', UNIT_ICONS[unit]));
         btn.dataset.tipTitle = t('hud.unit_cost', { unit: UNIT_NAMES[unit], cost: costLongText(udef.cost), time: udef.trainTime });
         btn.dataset.tipDesc = `${UNIT_DESCS[unit] ?? ''} ${t('hud.shift_train5')}`;
-        // Shift+clique: enfileira 5 de uma vez (AoE2)
+        // Shift+clique: enfileira 5 (AoE2). Com vários prédios do mesmo tipo
+        // selecionados, enfileira em cada um deles.
         btn.addEventListener('click', (e) => {
           if (btn.classList.contains('off')) return;
           const n = e.shiftKey ? 5 : 1;
-          for (let i = 0; i < n; i++) this.deps.onTrain(b.id, unit);
+          const targets = this.gs.selectedOwnBuildings().filter((bb) => bb.type === b.type && (bb.progress ?? 1) >= 1);
+          for (const bb of targets.length ? targets : [b]) {
+            for (let i = 0; i < n; i++) this.deps.onTrain(bb.id, unit);
+          }
         });
         this.trainBtns.set(unit, btn);
         grid.appendChild(btn);

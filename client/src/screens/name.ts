@@ -20,24 +20,23 @@ export class NameScreen {
   constructor(private deps: NameScreenDeps) {
     this.el = el('div', 'screen entry-screen');
 
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
     // (o fundo com a arte vem da classe .screen, via CSS — vale p/ todas as telas)
 
-    // Brasas subindo (o castelo em chamas) — vida leve e temática.
+    // Brasas subindo (o castelo em chamas) — vida leve e temática. Sempre ligadas:
+    // é a identidade da tela e um efeito bem suave, então NÃO seguimos o
+    // prefers-reduced-motion aqui (senão somem no PC com "reduzir animações" ligado,
+    // que no Windows costuma vir ligado sem a pessoa perceber).
     const embers = el('div', 'entry-embers');
-    if (!reduceMotion) {
-      for (let i = 0; i < 36; i++) {
-        const e = el('div', 'ember');
-        e.style.cssText =
-          `--x:${Math.round(rand(0, 100))}%;` +
-          `--size:${rand(2, 5).toFixed(1)}px;` +
-          `--dur:${rand(7, 15).toFixed(1)}s;` +
-          `--delay:${(-rand(0, 15)).toFixed(1)}s;` +
-          `--drift:${Math.round(rand(-38, 38))}px;` +
-          `--sway:${rand(2.5, 5).toFixed(1)}s`;
-        embers.appendChild(e);
-      }
+    for (let i = 0; i < 36; i++) {
+      const e = el('div', 'ember');
+      e.style.cssText =
+        `--x:${Math.round(rand(0, 100))}%;` +
+        `--size:${rand(2, 5).toFixed(1)}px;` +
+        `--dur:${rand(7, 15).toFixed(1)}s;` +
+        `--delay:${(-rand(0, 15)).toFixed(1)}s;` +
+        `--drift:${Math.round(rand(-38, 38))}px;` +
+        `--sway:${rand(2.5, 5).toFixed(1)}s`;
+      embers.appendChild(e);
     }
     this.el.appendChild(embers);
 

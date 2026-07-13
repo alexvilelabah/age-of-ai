@@ -291,13 +291,24 @@ export class GameState {
     return out;
   }
 
-  /** Prédio selecionado (a seleção de prédio é sempre única). */
+  /** Prédio selecionado (representante do painel; a seleção pode ter vários do
+   *  mesmo tipo via duplo-clique). */
   selectedBuilding(): BuildingSnap | undefined {
     for (const id of this.selection) {
       const b = this.buildings.get(id);
       if (b) return b;
     }
     return undefined;
+  }
+
+  /** Prédios próprios selecionados (multi-seleção pra treinar/produzir em massa). */
+  selectedOwnBuildings(): BuildingSnap[] {
+    const out: BuildingSnap[] = [];
+    for (const id of this.selection) {
+      const b = this.buildings.get(id);
+      if (b && b.owner === this.you) out.push(b);
+    }
+    return out;
   }
 
   selectedNode(): NodeSnap | undefined {

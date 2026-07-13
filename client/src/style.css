@@ -202,10 +202,6 @@ input.txt:focus { border-color: var(--gold); }
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .entry-screen .ember { animation: none; opacity: 0; }
-}
-
 /* ===== Menu de Opções (engrenagem + sliders) ===== */
 #settings-gear {
   position: fixed; top: 12px; right: 12px; z-index: 35;

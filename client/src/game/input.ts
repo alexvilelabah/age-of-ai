@@ -417,13 +417,39 @@ export class GameInput {
     this.gs.selection.add(id);
   }
 
-  /** Duplo clique: seleciona todas as unidades próprias do MESMO tipo visíveis
-   *  na tela (atalho clássico do AoE2 pra juntar o exército). */
+  /** Duplo clique: seleciona todos os próprios do MESMO tipo visíveis na tela
+   *  (atalho clássico do AoE2). Unidade -> junta o exército; prédio -> seleciona
+   *  todos os prédios daquele tipo pra treinar/produzir em massa. */
   private selectAllOfTypeAt(pos: { x: number; y: number }): void {
     const w = this.cam.screenToWorld(pos.x, pos.y);
     const now = performance.now();
     const pick = this.gs.pickAt(w.x, w.y, now);
-    if (pick?.kind !== 'unit' || pick.unit.owner !== this.gs.you) return;
+    if (!pick) return;
+
+    // Prédio próprio: seleciona todos os prédios PRONTOS do mesmo tipo na tela.
+    if (pick.kind === 'building') {
+      if (pick.building.owner !== this.gs.you) return;
+      // Em obra não treina — duplo-clique se comporta como clique simples.
+      if ((pick.building.progress ?? 1) < 1) return;
+      const type = pick.building.type;
+      const half = (BUILDING_DEFS[type]?.size ?? 1) / 2;
+      this.gs.selection.clear();
+      // O clicado entra sempre (o centro dele pode estar fora da tela).
+      this.gs.selection.add(pick.building.id);
+      for (const b of this.gs.buildings.values()) {
+        if (b.owner !== this.gs.you || b.type !== type) continue;
+        if ((b.progress ?? 1) < 1) continue;
+        const s = this.cam.worldToScreen(b.tileX + half, b.tileY + half);
+        if (s.x >= 0 && s.y >= 0 && s.x <= this.cam.viewW && s.y <= this.cam.viewH) {
+          this.gs.selection.add(b.id);
+        }
+      }
+      this.sfx.selectBuilding(type);
+      return;
+    }
+
+    // Unidade própria: junta todas do mesmo tipo (comportamento original).
+    if (pick.kind !== 'unit' || pick.unit.owner !== this.gs.you) return;
     const type = pick.unit.type;
     this.gs.selection.clear();
     for (const u of this.gs.units.values()) {
@@ -589,12 +615,17 @@ export class GameInput {
       return;
     }
 
-    // Nenhuma unidade selecionada: prédio de produção próprio selecionado -> setRally
+    // Nenhuma unidade selecionada: prédio de produção próprio selecionado -> setRally.
+    // Multi-seleção (duplo-clique): o rally acompanha todos os prédios prontos do
+    // mesmo tipo, pra não ficar "pela metade" (produz em massa mas junta num ponto só).
     const b = this.gs.selectedBuilding();
     if (b && b.owner === this.gs.you) {
       const def = BUILDING_DEFS[b.type];
       if (def && def.trains.length > 0) {
-        this.cmd({ kind: 'setRally', buildingId: b.id, x: w.x, y: w.y });
+        const targets = this.gs.selectedOwnBuildings().filter((bb) => bb.type === b.type && (bb.progress ?? 1) >= 1);
+        for (const bb of targets.length ? targets : [b]) {
+          this.cmd({ kind: 'setRally', buildingId: bb.id, x: w.x, y: w.y });
+        }
       }
     }
   }
