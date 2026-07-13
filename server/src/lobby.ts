@@ -353,9 +353,9 @@ export class Lobby {
       lastActivity: Date.now(),
     };
     room.members.set(conn.id, { id: conn.id, ready: false, joinOrder: this.joinCounter++ });
-    // Sala já nasce com 1 bot: quem não configurar nada tem inimigo garantido
-    // (o host pode remover com "− Bot" pra treinar 100% sozinho).
-    this.addBotToRoom(room, 'normal');
+    // Sala já nasce com 1 bot FÁCIL (padrão amigável: o fácil é passivo, não
+    // atropela quem tá começando). Host troca no chip ou remove com "− Bot".
+    this.addBotToRoom(room, 'easy');
     this.rooms.set(id, room);
     conn.roomId = id;
     this.broadcastRoomState(id);
@@ -546,7 +546,7 @@ export class Lobby {
       ready: true, // bots já entram prontos
       joinOrder: this.joinCounter++,
       isBot: true,
-      difficulty: difficulty ?? 'normal',
+      difficulty: difficulty ?? 'easy',
       name: `Bot ${botCount + 1}`,
     });
     return true;
