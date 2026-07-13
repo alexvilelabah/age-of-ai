@@ -17,9 +17,10 @@ import { readMetrics, MONITOR_HTML } from './metrics';
 
 const lobby = new Lobby();
 const PORT = Number(process.env.PORT) || GAME_PORT;
-// Senha do painel /sistema (simples — a proteção real é a URL discreta + noindex).
-// Dá pra sobrescrever com a env MONITOR_KEY. Sem o ?k correto, responde 404.
-const MONITOR_KEY = process.env.MONITOR_KEY || '123';
+// Senha do painel /sistema: vem SÓ da env MONITOR_KEY (definida fora do repo, no
+// ~/.age_env do celular). Sem a env, o /sistema fica DESLIGADO (404 sempre) — assim
+// não existe senha padrão exposta no código público (o repositório é open source).
+const MONITOR_KEY = process.env.MONITOR_KEY ?? '';
 
 // Pasta do cliente buildado (vite build -> client/dist), resolvida a partir
 // deste arquivo (server/src) e nao do diretorio de trabalho.
@@ -63,7 +64,8 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): void 
   // Removível apagando este bloco + o import de ./metrics.
   if (urlPath === '/sistema') {
     const u = new URL(req.url ?? '/', 'http://localhost');
-    if (u.searchParams.get('k') !== MONITOR_KEY) {
+    // sem chave configurada, ou chave errada -> 404 (nem revela que existe)
+    if (!MONITOR_KEY || u.searchParams.get('k') !== MONITOR_KEY) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('404');
       return;
@@ -120,7 +122,10 @@ function safeSend(ws: WebSocket, msg: ServerMessage): void {
 
 // WebSocket no MESMO servidor HTTP. Sem restricao de path: o cliente usa
 // ws://host:8080 em local e wss://host/ws atras do tunel — ambos sobem aqui.
-const wss = new WebSocketServer({ server: httpServer });
+// maxPayload: teto no tamanho das mensagens RECEBIDAS do cliente (as do jogo são
+// pequenas — comando/chat/nome). Evita que alguém mande um frame gigante e estoure
+// a memória do celular. 64 KB é bem folgado pro maior comando legítimo.
+const wss = new WebSocketServer({ server: httpServer, maxPayload: 64 * 1024 });
 
 wss.on('connection', (ws: WebSocket) => {
   const conn = lobby.connect((msg) => safeSend(ws, msg));

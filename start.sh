@@ -9,6 +9,11 @@
 set -e
 cd "$(cd "$(dirname "$0")" && pwd)"
 
+# Segredos LOCAIS (não versionados — ficam só no aparelho, fora do GitHub):
+# a senha do painel /sistema (MONITOR_KEY) e afins. Crie ~/.age_env com, ex.:
+#   export MONITOR_KEY=suaSenhaForte
+[ -f "$HOME/.age_env" ] && . "$HOME/.age_env"
+
 # Mantém CPU/rede acordadas — ESSENCIAL num celular (senão o Android dorme e o
 # servidor cai). Sem efeito fora do Termux.
 termux-wake-lock 2>/dev/null || true
