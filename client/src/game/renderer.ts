@@ -287,23 +287,29 @@ export class Renderer {
       if (u.state === 'gathering' && u.targetId != null) gathered.add(u.targetId);
     }
 
+    // Névoa: o que está escondido nem entra na lista (inimigo móvel só à vista;
+    // prédio/nó valem com explorado — ficam como "lembrança" sob o escurecido).
     const items: Item[] = [];
     for (const n of this.gs.nodes.values()) {
       if (n.tileX < minX - 2 || n.tileX > maxX + 2 || n.tileY < minY - 2 || n.tileY > maxY + 2) continue;
+      if (!this.gs.nodeVisible(n)) continue;
       items.push({ depth: n.tileX + n.tileY, kind: 'node', node: n });
     }
     for (const b of this.gs.buildings.values()) {
+      if (!this.gs.buildingVisible(b)) continue;
       const s = BUILDING_DEFS[b.type]?.size ?? 1;
       items.push({ depth: b.tileX + b.tileY + s, kind: 'building', building: b });
     }
     for (const u of this.gs.units.values()) {
       const pos = this.gs.unitPos(u, now);
       if (pos.x < minX - 2 || pos.x > maxX + 2 || pos.y < minY - 2 || pos.y > maxY + 2) continue;
+      if (!this.gs.unitVisible(u)) continue;
       items.push({ depth: pos.x + pos.y, kind: 'unit', unit: u, ux: pos.x, uy: pos.y });
     }
     for (const s of this.gs.sheep.values()) {
       const pos = this.gs.sheepPos(s, now);
       if (pos.x < minX - 2 || pos.x > maxX + 2 || pos.y < minY - 2 || pos.y > maxY + 2) continue;
+      if (!this.gs.sheepVisible(s)) continue;
       items.push({ depth: pos.x + pos.y, kind: 'sheep', sheep: s, ux: pos.x, uy: pos.y });
     }
     items.sort((a, b) => a.depth - b.depth);
@@ -323,6 +329,7 @@ export class Renderer {
     // --- árvores caindo (nós que acabaram de esgotar), tombando da base ---
     for (const r of this.gs.removedNodes) {
       if (r.node.type !== 'tree') continue;
+      if (!this.gs.fog.isVisible(r.node.tileX, r.node.tileY)) continue; // caiu na névoa: ninguém viu
       const age = (now - r.at) / 900;
       if (age < 0 || age >= 1) continue;
       const bx = px(r.node.tileX + 0.5, r.node.tileY + 0.5);
@@ -341,6 +348,7 @@ export class Renderer {
 
     // --- ovelhas comidas: puff de lã que sobe e some ---
     for (const r of this.gs.removedSheep) {
+      if (!this.gs.fog.isVisible(Math.floor(r.sheep.x), Math.floor(r.sheep.y))) continue;
       const age = (now - r.at) / 900;
       if (age < 0 || age >= 1) continue;
       const bx = px(r.sheep.x, r.sheep.y);
@@ -352,6 +360,23 @@ export class Renderer {
 
     // --- efeitos de combate (flechas, mortes, escombros, números de dano) ---
     this.drawCombatFx(ctx, px, py, hh, cam, now);
+
+    // --- NÉVOA DE GUERRA: imagem 1px-por-tile esticada sobre o losango do mapa.
+    // A suavização bilinear do drawImage dá a borda macia (sem quadriculado);
+    // preto total no nunca-visto, meia-luz no explorado, nada no à-vista.
+    // Depois dela vêm só elementos de UI do jogador (rally, ordens, fantasma,
+    // caixa de seleção) e o céu ambiente.
+    const fogCanvas = this.gs.fog.canvas;
+    if (fogCanvas) {
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // pixel (ix,iy) da imagem -> canto do tile (ix,iy) no mundo isométrico
+      ctx.transform(hw, hh, -hw, hh, px(0, 0), py(0, 0));
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(fogCanvas, 0, 0);
+      ctx.restore();
+    }
 
     // --- bandeiras de reunião ---
     for (const id of this.gs.selection) {
@@ -2025,12 +2050,17 @@ export class Renderer {
   ): void {
     const onScreen = (sx: number, sy: number): boolean =>
       sx > -70 && sy > -90 && sx < cam.viewW + 70 && sy < cam.viewH + 70;
+    // Névoa: efeito só aparece se o ponto estiver À VISTA (batalha invisível
+    // não mostra sangue, fumaça nem números).
+    const fogVis = (wx: number, wy: number): boolean =>
+      this.gs.fog.isVisible(Math.floor(wx), Math.floor(wy));
 
     // --- mortes: poça de sangue no chão + boneco tombando e sumindo ---
     for (const d of this.gs.deaths) {
       const u = d.unit;
       const age = (now - d.at) / 1100;
       if (age < 0 || age >= 1) continue;
+      if (!fogVis(u.x, u.y)) continue;
       const sx = px(u.x, u.y);
       const sy = py(u.x, u.y);
       if (!onScreen(sx, sy)) continue;
@@ -2059,6 +2089,7 @@ export class Renderer {
       const age = (now - w.at) / 2300;
       if (age < 0 || age >= 1) continue;
       const s = BUILDING_DEFS[b.type]?.size ?? 1;
+      if (!fogVis(b.tileX + s / 2, b.tileY + s / 2)) continue;
       const sx = px(b.tileX + s / 2, b.tileY + s / 2);
       const sy = py(b.tileX + s / 2, b.tileY + s / 2);
       if (!onScreen(sx, sy)) continue;
@@ -2126,6 +2157,9 @@ export class Renderer {
         txw = tp.x;
         tyw = tp.y;
       }
+      // névoa: flecha aparece se uma das pontas estiver à vista (a que sai do
+      // escuro fica escondida pelo próprio overlay na parte escura do arco)
+      if (!fogVis(a.x, a.y) && !fogVis(txw, tyw)) continue;
       drawArrow(px(a.x, a.y), py(a.x, a.y) - hh * 0.9, px(txw, tyw), py(txw, tyw) - hh * 0.7, phase / flight);
     }
 
@@ -2139,6 +2173,7 @@ export class Renderer {
       if (!tgt) continue;
       const tp = this.gs.unitPos(tgt, now);
       const size = BUILDING_DEFS[b.type]?.size ?? 1;
+      if (!fogVis(b.tileX + size / 2, b.tileY + size / 2) && !fogVis(tp.x, tp.y)) continue;
       const ax = px(b.tileX + size / 2, b.tileY + size / 2);
       // topo do prédio (o Centro da Cidade é bem maior que a torre)
       const ay = py(b.tileX + size / 2, b.tileY + size / 2) - hh * (b.type === 'town_center' ? 3.6 : 3.2);
@@ -2152,9 +2187,11 @@ export class Renderer {
     }
 
     // badge de GUARNIÇÃO: quantas unidades estão dentro da torre/Centro
+    // (informação AO VIVO — na névoa não mostra, mesmo com o prédio "lembrado")
     for (const b of this.gs.buildings.values()) {
       if (!b.garrison) continue;
       const size = BUILDING_DEFS[b.type]?.size ?? 1;
+      if (!fogVis(b.tileX + size / 2, b.tileY + size / 2)) continue;
       const bx = px(b.tileX + size / 2, b.tileY + size / 2);
       const by = py(b.tileX + size / 2, b.tileY + size / 2) - hh * (b.type === 'town_center' ? 3.3 : 2.9);
       ctx.fillStyle = 'rgba(20,16,10,0.82)';
@@ -2182,6 +2219,7 @@ export class Renderer {
       for (const h of this.gs.hits) {
         const age = (now - h.at) / 800;
         if (age < 0 || age >= 1) continue;
+        if (!fogVis(h.x, h.y)) continue;
         const sx = px(h.x, h.y);
         const sy = py(h.x, h.y) - hh * 1.6 - age * hh * 1.4; // subida proporcional ao zoom
         if (!onScreen(sx, sy)) continue;

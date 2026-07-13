@@ -32,6 +32,7 @@ interface Room {
   inGame: boolean;
   game: Game | null;
   mode: GameMode; // 'normal' | 'batalha' (escolhido pelo host)
+  fog: boolean; // névoa de guerra (mapa fechado); default false = mapa aberto
   lastActivity: number; // última ação na sala (Date.now) — p/ fechar sala ociosa
 }
 
@@ -120,6 +121,12 @@ export class Lobby {
         break;
       case 'setMode':
         this.setMode(conn, msg.mode);
+        break;
+      case 'setFog':
+        this.setFog(conn, msg.fog);
+        break;
+      case 'setBotDifficulty':
+        this.setBotDifficulty(conn, msg.botId, msg.difficulty);
         break;
       case 'joinRoom':
         this.joinRoom(conn, msg.roomId);
@@ -238,7 +245,7 @@ export class Lobby {
     conn.send({ type: 'welcome', playerId: oldId });
     conn.send({ type: 'nameOk' });
     if (room.game) {
-      conn.send({ type: 'gameStart', map: room.game.map, players: room.game.toPlayerInfos(), you: oldId });
+      conn.send({ type: 'gameStart', map: room.game.map, players: room.game.toPlayerInfos(), you: oldId, fog: room.fog });
       // reconectou no meio de uma pausa: já mostra o overlay (senão veria o jogo congelado sem explicação)
       if (room.game.isPaused) conn.send({ type: 'gamePaused', paused: true, by: '' });
     }
@@ -279,6 +286,7 @@ export class Lobby {
       inGame: false,
       game: null,
       mode: 'normal',
+      fog: false, // mapa começa ABERTO (o host fecha se quiser névoa)
       lastActivity: Date.now(),
     };
     room.members.set(conn.id, { id: conn.id, ready: false, joinOrder: this.joinCounter++ });
@@ -429,6 +437,29 @@ export class Lobby {
     this.broadcastRoomState(room.id);
   }
 
+  /** Host abre/fecha o mapa (névoa de guerra). */
+  private setFog(conn: Connection, fog: boolean): void {
+    if (!conn.roomId) return;
+    const room = this.rooms.get(conn.roomId);
+    if (!room || room.inGame || room.hostId !== conn.id) return;
+    room.fog = !!fog;
+    this.touch(room);
+    this.broadcastRoomState(room.id);
+  }
+
+  /** Host muda a dificuldade de um bot da sala (antes de iniciar). */
+  private setBotDifficulty(conn: Connection, botId: number, difficulty: BotDifficulty): void {
+    if (!conn.roomId) return;
+    const room = this.rooms.get(conn.roomId);
+    if (!room || room.inGame || room.hostId !== conn.id) return;
+    if (!['easy', 'normal', 'hard', 'expert'].includes(difficulty)) return;
+    const m = room.members.get(botId);
+    if (!m || !m.isBot) return;
+    m.difficulty = difficulty;
+    this.touch(room);
+    this.broadcastRoomState(room.id);
+  }
+
   /** Host define o TIME de qualquer vaga (0 = sozinho, 1/2 = time). */
   private setTeam(conn: Connection, playerId: number, team: number): void {
     if (!conn.roomId) return;
@@ -543,7 +574,7 @@ export class Lobby {
     for (const m of gameMembers) {
       const c = this.conns.get(m.id);
       if (!c) continue;
-      const msg: ServerMessage = { type: 'gameStart', map: game.map, players: playerInfos, you: m.id };
+      const msg: ServerMessage = { type: 'gameStart', map: game.map, players: playerInfos, you: m.id, fog: room.fog };
       c.send(msg);
     }
     game.start();
@@ -654,7 +685,7 @@ export class Lobby {
         team: m.team,
       };
     });
-    const msg: ServerMessage = { type: 'roomState', roomId, players, mode: room.mode };
+    const msg: ServerMessage = { type: 'roomState', roomId, players, mode: room.mode, fog: room.fog };
     for (const m of room.members.values()) this.conns.get(m.id)?.send(msg);
   }
 }

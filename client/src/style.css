@@ -77,7 +77,7 @@ input.txt:focus { border-color: var(--gold); }
 }
 .subtitle { color: var(--muted); margin: 0 0 12px; font-style: italic; }
 .card { padding: 24px 28px; display: flex; flex-direction: column; gap: 12px; width: 420px; max-width: 92vw; }
-.card.wide { width: 560px; }
+.card.wide { width: 452px; padding: 18px 22px; gap: 8px; }
 .card h2 {
   margin: 0 0 4px;
   color: var(--gold);
@@ -238,6 +238,10 @@ input.txt:focus { border-color: var(--gold); }
 .opt-slider:focus::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(217, 169, 65, 0.35); }
 .row { display: flex; gap: 10px; }
 .row .btn { flex: 1; }
+/* Fileiras "Modo:" / "Mapa:" — rótulo curto à esquerda, botões dividindo o resto. */
+.mode-row { align-items: center; gap: 8px; }
+.mode-label { flex: 0 0 auto; font-size: 13px; color: var(--muted); }
+.mode-row .mode-btn { font-size: 13px; padding: 6px 8px; }
 
 /* Lobby */
 .room-list { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
@@ -273,15 +277,16 @@ input.txt:focus { border-color: var(--gold); }
 .ready-tag { font-size: 13px; white-space: nowrap; }
 .ready-tag.yes { color: var(--green); }
 .ready-tag.no { color: var(--muted); }
-.bot-diff {
+/* Chip de DIFICULDADE do bot (host clica pra ciclar passivo..agressivo) */
+.diff-chip {
+  flex: 0 0 auto !important;
   font-size: 12px;
-  color: var(--muted);
-  background: rgba(0, 0, 0, 0.22);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
   padding: 1px 8px;
+  border-radius: 999px;
   white-space: nowrap;
+  color: var(--muted);
 }
+.diff-chip:disabled { opacity: 0.75; cursor: default; }
 /* Chip de TIME por vaga (host alterna — / 1 / 2) */
 .team-chip {
   flex: 0 0 auto !important;
@@ -293,9 +298,6 @@ input.txt:focus { border-color: var(--gold); }
 .team-chip.t1 { border-color: #4c86c8; color: #9cc4ee; }
 .team-chip.t2 { border-color: #c85555; color: #f0a2a2; }
 .team-chip:disabled { opacity: 0.75; cursor: default; }
-/* Seletor de dificuldade do bot: 4 botões, rótulos curtos (cabe "Muito difícil"). */
-.diff-row { flex-wrap: wrap; }
-.diff-row .mode-btn { font-size: 13px; padding: 6px 4px; min-width: 0; }
 .chat-panel { display: flex; flex-direction: column; gap: 8px; }
 .chat-log {
   height: 84px;

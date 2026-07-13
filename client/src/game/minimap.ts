@@ -192,12 +192,16 @@ export class Minimap {
     // escala aproximada de px por tile (pro tamanho dos pontos)
     const kk = Math.max(2, (2 * HWm) / n);
 
+    // Névoa: mesmas regras da tela (inimigo móvel só à vista; prédio/nó
+    // valem com explorado — o overlay escurece a "lembrança").
     for (const nd of this.gs.nodes.values()) {
+      if (!this.gs.nodeVisible(nd)) continue;
       const p = this.project(nd.tileX + 0.5, nd.tileY + 0.5);
       ctx.fillStyle = MINIMAP_NODE_COLORS[nd.type] ?? '#888888';
       ctx.fillRect(p.x - kk / 2, p.y - kk / 2, kk, kk);
     }
     for (const b of this.gs.buildings.values()) {
+      if (!this.gs.buildingVisible(b)) continue;
       const s = BUILDING_DEFS[b.type]?.size ?? 1;
       const p = this.project(b.tileX + s / 2, b.tileY + s / 2);
       const r = Math.max(3, kk * s * 0.7);
@@ -205,15 +209,29 @@ export class Minimap {
       ctx.fillRect(p.x - r / 2, p.y - r / 2, r, r);
     }
     for (const u of this.gs.units.values()) {
+      if (!this.gs.unitVisible(u)) continue;
       const pos = this.gs.unitPos(u, now);
       const p = this.project(pos.x, pos.y);
       ctx.fillStyle = this.gs.colorOf(u.owner);
       ctx.fillRect(p.x - 1.4, p.y - 1.4, 2.8, 2.8);
     }
     for (const s of this.gs.sheep.values()) {
+      if (!this.gs.sheepVisible(s)) continue;
       const p = this.project(s.x, s.y);
       ctx.fillStyle = this.gs.isWildSheep(s) ? '#f4f2ee' : this.gs.colorOf(s.owner);
       ctx.fillRect(p.x - 1.2, p.y - 1.2, 2.4, 2.4);
+    }
+
+    // --- névoa por cima do terreno+pontos (borda, câmera e pings ficam acima) ---
+    const fogCanvas = this.gs.fog.canvas;
+    if (fogCanvas) {
+      const a2 = HWm / n, d2 = HHm / n;
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.transform(a2, d2, -a2, d2, CXM, CYM - HHm); // mesma afim do terreno
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(fogCanvas, 0, 0);
+      ctx.restore();
     }
 
     // --- borda do losango ---

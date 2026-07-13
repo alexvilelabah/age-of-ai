@@ -11,11 +11,15 @@ export interface RoomScreenDeps {
   onStartGame: () => void;
   onLeaveRoom: () => void;
   onChat: (text: string) => void;
-  onAddBot: (difficulty: BotDifficulty) => void;
+  onAddBot: () => void;
   onRemoveBot: () => void;
   onSetTeam: (playerId: number, team: number) => void;
   onSetMode: (mode: GameMode) => void;
+  onSetFog: (fog: boolean) => void;
+  onSetBotDifficulty: (botId: number, difficulty: BotDifficulty) => void;
 }
+
+const DIFFICULTIES: BotDifficulty[] = ['easy', 'normal', 'hard', 'expert'];
 
 export class RoomScreen {
   readonly el: HTMLElement;
@@ -31,11 +35,9 @@ export class RoomScreen {
   private players: RoomPlayer[] = [];
   private myId = -1;
   private mode: GameMode = 'normal';
+  private fog = false;
   private modeBtns: { m: GameMode; btn: HTMLButtonElement }[] = [];
-  // Dificuldade do PRÓXIMO bot a ser adicionado (só o host escolhe).
-  private selectedBotDifficulty: BotDifficulty = 'normal';
-  private diffRow!: HTMLElement;
-  private diffBtns: { d: BotDifficulty; btn: HTMLButtonElement }[] = [];
+  private fogBtns: { closed: boolean; btn: HTMLButtonElement }[] = [];
 
   constructor(private deps: RoomScreenDeps) {
     this.el = el('div', 'screen');
@@ -63,28 +65,21 @@ export class RoomScreen {
     }
     card.appendChild(modeRow);
 
-    // Dificuldade do próximo bot (só o host; estilo Age of Mythology).
-    const diffRow = el('div', 'row mode-row diff-row');
-    diffRow.appendChild(el('span', 'mode-label', t('room.difficulty')));
-    const diffOpts: { d: BotDifficulty; label: string; title: string }[] = [
-      { d: 'easy', label: t('room.diff_easy'), title: t('room.diff_easy_desc') },
-      { d: 'normal', label: t('room.diff_normal'), title: t('room.diff_normal_desc') },
-      { d: 'hard', label: t('room.diff_hard'), title: t('room.diff_hard_desc') },
-      { d: 'expert', label: t('room.diff_expert'), title: t('room.diff_expert_desc') },
+    // Mapa aberto x fechado (névoa de guerra) — só o host; começa ABERTO.
+    const mapRow = el('div', 'row mode-row');
+    mapRow.appendChild(el('span', 'mode-label', t('room.map')));
+    const mapOpts: { closed: boolean; label: string; title: string }[] = [
+      { closed: false, label: t('room.map_open'), title: t('room.map_open_desc') },
+      { closed: true, label: t('room.map_closed'), title: t('room.map_closed_desc') },
     ];
-    for (const o of diffOpts) {
+    for (const o of mapOpts) {
       const btn = el('button', 'btn mode-btn', o.label);
       btn.title = o.title;
-      btn.addEventListener('click', () => {
-        this.selectedBotDifficulty = o.d;
-        this.updateDiffButtons();
-      });
-      this.diffBtns.push({ d: o.d, btn });
-      diffRow.appendChild(btn);
+      btn.addEventListener('click', () => this.deps.onSetFog(o.closed));
+      this.fogBtns.push({ closed: o.closed, btn });
+      mapRow.appendChild(btn);
     }
-    this.diffRow = diffRow;
-    this.updateDiffButtons();
-    card.appendChild(diffRow);
+    card.appendChild(mapRow);
 
     const actions = el('div', 'row');
     this.readyBtn = el('button', 'btn primary', t('room.ready'));
@@ -94,7 +89,7 @@ export class RoomScreen {
     this.startBtn.addEventListener('click', () => this.deps.onStartGame());
     this.addBotBtn = el('button', 'btn', t('room.add_bot'));
     this.addBotBtn.title = t('room.add_bot_desc');
-    this.addBotBtn.addEventListener('click', () => this.deps.onAddBot(this.selectedBotDifficulty));
+    this.addBotBtn.addEventListener('click', () => this.deps.onAddBot());
     this.removeBotBtn = el('button', 'btn', t('room.remove_bot'));
     this.removeBotBtn.addEventListener('click', () => this.deps.onRemoveBot());
     const leaveBtn = el('button', 'btn danger', t('room.leave'));
@@ -133,10 +128,11 @@ export class RoomScreen {
     this.chatInput.value = '';
   }
 
-  setState(roomId: string, players: RoomPlayer[], myId: number, mode: GameMode = 'normal'): void {
+  setState(roomId: string, players: RoomPlayer[], myId: number, mode: GameMode = 'normal', fog = false): void {
     this.players = Array.isArray(players) ? players : [];
     this.myId = myId;
     this.mode = mode;
+    this.fog = fog;
     const host = this.players.find((p) => p.isHost);
     this.roomTitle.textContent = host ? t('lobby.room_of', { host: host.name }) : t('room.room_n', { id: roomId });
     this.renderRows();
@@ -149,6 +145,11 @@ export class RoomScreen {
       btn.classList.toggle('primary', m === this.mode);
       btn.disabled = !isHost;
     }
+    // Mapa aberto/fechado: destaca o ativo; só o host troca.
+    for (const { closed, btn } of this.fogBtns) {
+      btn.classList.toggle('primary', closed === this.fog);
+      btn.disabled = !isHost;
+    }
     this.readyBtn.textContent = me?.ready ? t('room.not_ready') : t('room.ready');
     this.readyBtn.classList.toggle('hidden', isHost);
 
@@ -158,13 +159,7 @@ export class RoomScreen {
     this.startBtn.disabled = !(isHost && enoughPlayers && nonHostReady);
 
     this.addBotBtn.classList.toggle('hidden', !isHost || this.players.length >= MAX_PLAYERS_PER_ROOM);
-    this.diffRow.classList.toggle('hidden', !isHost || this.players.length >= MAX_PLAYERS_PER_ROOM);
     this.removeBotBtn.classList.toggle('hidden', !isHost || !this.players.some((p) => p.isBot));
-  }
-
-  /** Destaca o botão da dificuldade escolhida pro próximo bot. */
-  private updateDiffButtons(): void {
-    for (const { d, btn } of this.diffBtns) btn.classList.toggle('primary', d === this.selectedBotDifficulty);
   }
 
   addChat(from: string, text: string): void {
@@ -183,13 +178,22 @@ export class RoomScreen {
       swatch.style.background = p.color;
       row.appendChild(swatch);
       row.appendChild(el('span', 'pname', p.name + (p.id === this.myId ? t('common.you_suffix') : '')));
+      const meHost = this.players.find((x) => x.id === this.myId)?.isHost ?? false;
       if (p.isBot) {
         row.appendChild(el('span', '', '🤖'));
-        row.appendChild(el('span', 'bot-diff', t(`room.diff_${p.difficulty ?? 'normal'}`)));
+        // Dificuldade = chip clicável (só o host): cicla passivo -> ... -> agressivo.
+        const diff = p.difficulty ?? 'normal';
+        const diffBtn = el('button', 'btn diff-chip', t(`room.diff_${diff}`));
+        diffBtn.title = t('room.bot_diff_tip');
+        diffBtn.disabled = !meHost;
+        diffBtn.addEventListener('click', () => {
+          const next = DIFFICULTIES[(DIFFICULTIES.indexOf(diff) + 1) % DIFFICULTIES.length];
+          this.deps.onSetBotDifficulty(p.id, next);
+        });
+        row.appendChild(diffBtn);
       }
       if (p.isHost) row.appendChild(el('span', '', '👑'));
       // TIME (estilo AoE): chip por vaga; só o host alterna (— -> 1 -> 2 -> —).
-      const meHost = this.players.find((x) => x.id === this.myId)?.isHost ?? false;
       const team = p.team ?? 0;
       const teamBtn = el('button', `btn team-chip t${team}`, `${t('room.team')} ${team === 0 ? '—' : team}`);
       teamBtn.title = t('room.team_tip');

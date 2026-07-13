@@ -58,6 +58,8 @@ export type BotDifficulty = 'easy' | 'normal' | 'hard' | 'expert';
 export type ClientMessage =
   | { type: 'setName'; name: string; clientId?: string }
   | { type: 'setMode'; mode: GameMode } // apenas host: escolhe Normal/Batalha na sala
+  | { type: 'setFog'; fog: boolean } // apenas host: mapa fechado (névoa) ou aberto
+  | { type: 'setBotDifficulty'; botId: number; difficulty: BotDifficulty } // apenas host
   | { type: 'listRooms' }
   | { type: 'createRoom' }
   | { type: 'joinRoom'; roomId: string }
@@ -98,14 +100,14 @@ export type ServerMessage =
   | { type: 'nameOk' }              // nome aceito -> pode ir pro lobby
   | { type: 'nameTaken' }           // nome já em uso -> escolha outro
   | { type: 'roomList'; rooms: RoomSummary[] }
-  | { type: 'roomState'; roomId: string; players: RoomPlayer[]; mode: GameMode }
+  | { type: 'roomState'; roomId: string; players: RoomPlayer[]; mode: GameMode; fog: boolean }
   | { type: 'leftRoom' }
   // Erro: o servidor manda um CÓDIGO (traduzido no cliente via i18n) + params
   // opcionais. `age` (número) e `building` (tipo) são convertidos para o nome
   // no idioma do jogador pelo cliente. `message` é reserva (texto pronto).
   | { type: 'error'; code: string; params?: Record<string, string | number>; message?: string }
   | { type: 'chat'; from: string; text: string }
-  | { type: 'gameStart'; map: MapData; players: PlayerInfo[]; you: number }
+  | { type: 'gameStart'; map: MapData; players: PlayerInfo[]; you: number; fog: boolean }
   | {
       type: 'snapshot';
       tick: number;

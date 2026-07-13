@@ -56,8 +56,8 @@ export class GameScreen {
   private workListenY = Number.NaN;
   private workListenSince = 0;
 
-  constructor(map: MapData, players: PlayerInfo[], you: number, private deps: GameScreenDeps) {
-    this.state = new GameState(map, players, you);
+  constructor(map: MapData, players: PlayerInfo[], you: number, private deps: GameScreenDeps, fogEnabled = false) {
+    this.state = new GameState(map, players, you, fogEnabled);
     const gs = this.state;
 
     this.el = el('div', 'screen');
@@ -290,13 +290,20 @@ export class GameScreen {
     if (this.sndUnits >= 0 && mine > this.sndUnits) this.sfx.trained();
     this.sndUnits = mine;
 
-    // combate: sons de golpe/morte/destruição para o que surgiu desde o último frame
+    // combate: sons de golpe/morte/destruição para o que surgiu desde o último
+    // frame — só do que está À VISTA (batalha escondida na névoa não faz som)
+    const fogVis = (wx: number, wy: number): boolean =>
+      this.state.fog.isVisible(Math.floor(wx), Math.floor(wy));
     let newHit = false;
     let newDeath = false;
     let newWreck = false;
-    for (const h of this.state.hits) if (h.at > this.sndCombatAt) newHit = true;
-    for (const d of this.state.deaths) if (d.at > this.sndCombatAt) newDeath = true;
-    for (const w of this.state.wrecks) if (w.at > this.sndCombatAt) newWreck = true;
+    for (const h of this.state.hits) if (h.at > this.sndCombatAt && fogVis(h.x, h.y)) newHit = true;
+    for (const d of this.state.deaths) if (d.at > this.sndCombatAt && fogVis(d.unit.x, d.unit.y)) newDeath = true;
+    for (const w of this.state.wrecks) {
+      if (w.at <= this.sndCombatAt) continue;
+      const sz = BUILDING_DEFS[w.building.type]?.size ?? 1;
+      if (fogVis(w.building.tileX + sz / 2, w.building.tileY + sz / 2)) newWreck = true;
+    }
     if (newHit) this.sfx.hit(performance.now());
     if (newDeath) this.sfx.death();
     if (newWreck) this.sfx.wreck();

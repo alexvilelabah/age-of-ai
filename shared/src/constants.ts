@@ -88,6 +88,15 @@ export const BUILDING_DEFS: Record<BuildingType, BuildingDef> = {
   mining_camp:   { hp: 250,  size: 2, cost: { wood: 100 },             buildTime: 15, popProvided: 0, trains: [],              isDropOff: true,  ageReq: 1, accepts: ['gold', 'stone'] },
 };
 
+// ---------- Visão (névoa de guerra, só apresentação no cliente) ----------
+// Raios em tiles, medidos do CENTRO da fonte. Unidades usam o `sight` delas.
+export const BUILDING_VISION_DEFAULT = 6;
+export const BUILDING_VISION: Partial<Record<BuildingType, number>> = {
+  town_center: 9,
+  watch_tower: 9,
+};
+export const SHEEP_VISION = 3;
+
 // ---------- Mercado: compra/venda de recursos por ouro ----------
 // Preços em ouro por LOTE de 100 unidades, compartilhados pela sala (estilo
 // AoE2): comprar encarece o recurso, vender barateia — para todo mundo.

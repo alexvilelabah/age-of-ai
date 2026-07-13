@@ -15,7 +15,18 @@ import type {
   UnitSnap,
   UnitType,
 } from '@age/shared';
-import { BUILDING_DEFS, SHEEP_WILD_OWNER, SNAPSHOT_TICKS, TICK_MS, TILE_GRASS } from '@age/shared';
+import {
+  BUILDING_DEFS,
+  BUILDING_VISION,
+  BUILDING_VISION_DEFAULT,
+  SHEEP_VISION,
+  SHEEP_WILD_OWNER,
+  SNAPSHOT_TICKS,
+  TICK_MS,
+  TILE_GRASS,
+  UNIT_DEFS,
+} from '@age/shared';
+import { FogOfWar } from './game/fog';
 
 export const SNAP_INTERVAL_MS = SNAPSHOT_TICKS * TICK_MS;
 
@@ -85,10 +96,24 @@ export class GameState {
    *  (que some sem dano e NÃO deve fumegar). */
   private hurtBuildings = new Set<number>();
 
-  constructor(map: MapData, players: PlayerInfo[], you: number) {
+  /** Névoa de guerra (só apresentação; o servidor continua mandando tudo). */
+  readonly fog: FogOfWar;
+  /** Donos cuja visão eu compartilho: eu + aliados do mesmo time (>0). */
+  readonly alliedOwners: Set<number>;
+
+  constructor(map: MapData, players: PlayerInfo[], you: number, fogEnabled = false) {
     this.map = map;
     this.players = Array.isArray(players) ? players : [];
     this.you = you;
+    this.fog = new FogOfWar(map.size);
+    // Mapa ABERTO (padrão): revela tudo de uma vez. Aí toda a lógica de névoa
+    // continua funcionando, só que sempre "à vista" — custo e efeito zero.
+    if (!fogEnabled) this.fog.revealAll();
+    this.alliedOwners = new Set([you]);
+    const myTeam = this.players.find((p) => p.id === you)?.team ?? 0;
+    if (myTeam > 0) {
+      for (const p of this.players) if (p.team === myTeam) this.alliedOwners.add(p.id);
+    }
   }
 
   colorOf(owner: number): string {
@@ -101,6 +126,31 @@ export class GameState {
 
   me(): PlayerSnap | undefined {
     return this.playerSnaps.get(this.you);
+  }
+
+  // ------------------------------------------------------------- névoa
+  // Regras de aparição (usadas por renderer, minimapa e clique):
+  // unidades/ovelhas móveis exigem tile À VISTA; prédios/nós valem com
+  // EXPLORADO (ficam como "lembrança" escurecida, estilo AoE).
+
+  unitVisible(u: UnitSnap): boolean {
+    if (this.alliedOwners.has(u.owner)) return true;
+    return this.fog.isVisible(Math.floor(u.x), Math.floor(u.y));
+  }
+
+  sheepVisible(s: SheepSnap): boolean {
+    if (!this.isWildSheep(s) && this.alliedOwners.has(s.owner)) return true;
+    return this.fog.isVisible(Math.floor(s.x), Math.floor(s.y));
+  }
+
+  buildingVisible(b: BuildingSnap): boolean {
+    if (this.alliedOwners.has(b.owner)) return true;
+    const s = BUILDING_DEFS[b.type]?.size ?? 1;
+    return this.fog.isExplored(Math.floor(b.tileX + s / 2), Math.floor(b.tileY + s / 2));
+  }
+
+  nodeVisible(n: NodeSnap): boolean {
+    return this.fog.isExplored(n.tileX, n.tileY);
   }
 
   applySnapshot(snap: SnapshotData): void {
@@ -227,6 +277,44 @@ export class GameState {
       if (!this.units.has(id) && !this.buildings.has(id) && !this.nodes.has(id) && !this.sheep.has(id)) {
         this.selection.delete(id);
       }
+    }
+
+    // --- névoa de guerra: recalcula a visão a partir do snapshot novo ---
+    const sources: { x: number; y: number; r: number }[] = [];
+    for (const u of this.units.values()) {
+      if (!this.alliedOwners.has(u.owner)) continue;
+      sources.push({ x: u.x, y: u.y, r: UNIT_DEFS[u.type]?.sight ?? 5 });
+    }
+    for (const b of this.buildings.values()) {
+      if (!this.alliedOwners.has(b.owner)) continue;
+      const sz = BUILDING_DEFS[b.type]?.size ?? 1;
+      // canteiro de obra enxerga pouco; prédio pronto usa o raio da tabela
+      const r = (b.progress ?? 1) >= 1 ? BUILDING_VISION[b.type] ?? BUILDING_VISION_DEFAULT : 2;
+      sources.push({ x: b.tileX + sz / 2, y: b.tileY + sz / 2, r });
+    }
+    for (const sp of this.sheep.values()) {
+      if (this.isWildSheep(sp) || !this.alliedOwners.has(sp.owner)) continue;
+      sources.push({ x: sp.x, y: sp.y, r: SHEEP_VISION });
+    }
+    this.fog.recompute(sources);
+
+    // Poda da seleção quem ficou escondido pela névoa (sem painel espião).
+    // Prédio inimigo segue a regra do clique: só continua selecionado À VISTA.
+    for (const id of [...this.selection]) {
+      const su = this.units.get(id);
+      if (su && !this.unitVisible(su)) { this.selection.delete(id); continue; }
+      const ss = this.sheep.get(id);
+      if (ss && !this.sheepVisible(ss)) { this.selection.delete(id); continue; }
+      const sb = this.buildings.get(id);
+      if (sb && !this.alliedOwners.has(sb.owner)) {
+        const bsz = BUILDING_DEFS[sb.type]?.size ?? 1;
+        if (!this.fog.isVisible(Math.floor(sb.tileX + bsz / 2), Math.floor(sb.tileY + bsz / 2))) {
+          this.selection.delete(id);
+          continue;
+        }
+      }
+      const sn = this.nodes.get(id);
+      if (sn && !this.nodeVisible(sn)) this.selection.delete(id);
     }
 
     this.hasSnapshot = true;
@@ -359,6 +447,7 @@ export class GameState {
     let bestUnit: UnitSnap | null = null;
     let bestD2 = Infinity;
     for (const u of this.units.values()) {
+      if (!this.unitVisible(u)) continue; // escondido na névoa não é clicável
       const pos = this.unitPos(u, now);
       const r = unitRadius(u.type) + 0.2;
       // ponto da linha diagonal mais próximo do pé do boneco
@@ -377,6 +466,7 @@ export class GameState {
     let bestSheep: SheepSnap | null = null;
     let bestSD2 = Infinity;
     for (const s of this.sheep.values()) {
+      if (!this.sheepVisible(s)) continue; // escondida na névoa
       const pos = this.sheepPos(s, now);
       const r = 0.55;
       const t = Math.max(0, Math.min(0.6, ((pos.x - wx) + (pos.y - wy)) / 2));
@@ -400,6 +490,11 @@ export class GameState {
     const B_H: Partial<Record<BuildingType, number>> = { farm: 0.2, house: 1.7, town_center: 3.2, wall: 0.9, watch_tower: 3.4, market: 2.0, mill: 1.6, lumber_camp: 1.4, mining_camp: 1.4 };
     for (const b of this.buildings.values()) {
       const size = BUILDING_DEFS[b.type]?.size ?? 1;
+      // Inimigo só é SELECIONÁVEL com o tile à vista (o "lembrado" na névoa
+      // aparece mas não dá pra clicar — senão vazaria o HP ao vivo, e no AoE
+      // também é assim). Meus/aliados sempre.
+      if (!this.alliedOwners.has(b.owner) &&
+          !this.fog.isVisible(Math.floor(b.tileX + size / 2), Math.floor(b.tileY + size / 2))) continue;
       if (diagHit(b.tileX, b.tileY, b.tileX + size, b.tileY + size, B_H[b.type] ?? 2.5)) {
         return { kind: 'building', building: b };
       }
@@ -407,6 +502,7 @@ export class GameState {
 
     const N_H: Record<NodeType, number> = { tree: 1.9, berry_bush: 0.4, gold_mine: 0.9, stone_mine: 0.9 };
     for (const n of this.nodes.values()) {
+      if (!this.nodeVisible(n)) continue; // ainda não explorado
       if (diagHit(n.tileX, n.tileY, n.tileX + 1, n.tileY + 1, N_H[n.type] ?? 0.5)) {
         return { kind: 'node', node: n };
       }
@@ -416,7 +512,8 @@ export class GameState {
 
   /**
    * Pré-validação de posicionamento de prédio (o servidor revalida):
-   * dentro do mapa, todos os tiles de grama, sem sobrepor prédios ou nós.
+   * dentro do mapa, todos os tiles de grama JÁ EXPLORADOS (estilo AoE — não se
+   * constrói no escuro), sem sobrepor prédios ou nós.
    */
   canPlace(type: BuildingType, tileX: number, tileY: number): boolean {
     const def = BUILDING_DEFS[type];
@@ -428,6 +525,7 @@ export class GameState {
     for (let ty = tileY; ty < tileY + s; ty++) {
       for (let tx = tileX; tx < tileX + s; tx++) {
         if (this.tileAt(tx, ty) !== TILE_GRASS) return false;
+        if (!this.fog.isExplored(tx, ty)) return false;
       }
     }
     for (const b of this.buildings.values()) {

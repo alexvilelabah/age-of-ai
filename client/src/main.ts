@@ -114,10 +114,12 @@ const roomScreen = new RoomScreen({
     net.send({ type: 'listRooms' });
   },
   onChat: (text) => net.send({ type: 'chat', text }),
-  onAddBot: (difficulty) => net.send({ type: 'addBot', difficulty }),
+  onAddBot: () => net.send({ type: 'addBot' }),
   onRemoveBot: () => net.send({ type: 'removeBot' }),
   onSetTeam: (playerId, team) => net.send({ type: 'setTeam', playerId, team }),
   onSetMode: (mode) => net.send({ type: 'setMode', mode }),
+  onSetFog: (fog) => net.send({ type: 'setFog', fog }),
+  onSetBotDifficulty: (botId, difficulty) => net.send({ type: 'setBotDifficulty', botId, difficulty }),
 });
 
 function screenEl(name: ScreenName): HTMLElement {
@@ -198,7 +200,7 @@ function dispatch(msg: ServerMessage): void {
     }
     case 'roomState': {
       lastRoomPlayers = Array.isArray(msg.players) ? msg.players : [];
-      roomScreen.setState(msg.roomId, lastRoomPlayers, myPlayerId, msg.mode);
+      roomScreen.setState(msg.roomId, lastRoomPlayers, myPlayerId, msg.mode, msg.fog);
       // Ignora troca de tela enquanto o overlay de fim de jogo está visível: o
       // servidor manda 'roomState' logo após 'gameOver' (reset do lobby), mas o
       // jogador ainda não confirmou "Voltar ao lobby" — trocar de tela agora
@@ -252,7 +254,7 @@ function dispatch(msg: ServerMessage): void {
           showScreen('lobby');
           net.send({ type: 'listRooms' });
         },
-      });
+      }, msg.fog);
       showScreen('game');
       break;
     }
@@ -281,6 +283,7 @@ function dispatch(msg: ServerMessage): void {
     }
     case 'gameOver': {
       const youWon = msg.won ?? (msg.winner === myPlayerId);
+      gameScreen?.state.fog.revealAll(); // fim de jogo revela o mapa (estilo AoE)
       gameOverScreen.show(youWon, msg.winnerName);
       music.setState('end'); // música de fim de jogo
       break;
