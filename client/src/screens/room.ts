@@ -1,5 +1,5 @@
-// Tela 3: Sala — lista de jogadores (cor, pronto, coroa de host), toggle
-// "Pronto", "Iniciar partida" (só host), "Sair da sala" e chat.
+// Tela 3: Sala — layout "tabuleiro" emoldurado em ouro (estilo AoE): duas colunas
+// (Jogadores | Configuração da partida), ações centrais e chat embaixo. Foco desktop.
 
 import type { BotDifficulty, GameMode, RoomPlayer, TerrainKind } from '@age/shared';
 import { MAX_PLAYERS_PER_ROOM, MIN_PLAYERS_TO_START } from '@age/shared';
@@ -23,6 +23,41 @@ export interface RoomScreenDeps {
 
 const DIFFICULTIES: BotDifficulty[] = ['easy', 'normal', 'hard', 'expert'];
 
+// --- Ícones SVG (gravados em ouro; não dependem da fonte de emoji do sistema) ---
+const IC_PLAYERS = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 11a4 4 0 100-8 4 4 0 000 8zm0 2c-3.3 0-8 1.7-8 5v2h11v-2c0-1.7 1-3.1 2.5-4.1-1.5-.6-3.2-.9-5.5-.9zm7.5 0c-.7 0-1.5.1-2.3.3 1.7 1 2.8 2.5 2.8 4.6V20H23v-2c0-3-4.3-5-6.5-5zm-.5-2a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/></svg>';
+const IC_SWORDS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14.5 4.5l5 5L9 20H4v-5z"/><path d="M14.5 4.5l-11 11M20 20l-6-6"/></svg>';
+const IC_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 12a8 8 0 01-11.5 7.2L3 21l1.8-6.5A8 8 0 1121 12z"/></svg>';
+const IC_MODE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3l4 6-4 6-4-6zM18 3l4 6-4 6-4-6zM12 9l4 6-4 6-4-6z"/></svg>';
+const IC_MAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/></svg>';
+const IC_TERRAIN = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C9 6 6 9 6 13a6 6 0 0012 0c0-4-3-7-6-11z"/></svg>';
+const CREST = '<svg class="sala-crest" viewBox="0 0 52 58" aria-hidden="true"><path d="M6 6H46V32C46 44 36 50 26 56 16 50 6 44 6 32Z" fill="#22385a" stroke="#d8b25a" stroke-width="2.4"/><path d="M13 34 15 20 20.5 27 26 16 31.5 27 37 20 39 34Z" fill="#f6e7b4"/><circle cx="15" cy="18" r="1.7" fill="#f6e7b4"/><circle cx="26" cy="14" r="1.8" fill="#f6e7b4"/><circle cx="37" cy="18" r="1.7" fill="#f6e7b4"/></svg>';
+const GLYPH_HOST = '<svg viewBox="0 0 40 40" fill="#f6e7b4"><path d="M7 30 10 14 16 22 20 11 24 22 30 14 33 30Z"/><rect x="7" y="30.5" width="26" height="3.5" rx="1"/></svg>';
+const GLYPH_BOT = '<svg viewBox="0 0 40 40" fill="none" stroke="#f6e7b4" stroke-width="2.3"><rect x="8" y="13" width="24" height="17" rx="4"/><circle cx="16" cy="21" r="2.4" fill="#f6e7b4" stroke="none"/><circle cx="24" cy="21" r="2.4" fill="#f6e7b4" stroke="none"/><path d="M20 13V8M20 8h-3.5"/></svg>';
+const GLYPH_PERSON = '<svg viewBox="0 0 24 24" fill="#c9b48a"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6z"/></svg>';
+
+/** Adiciona os 4 cantos ornamentados (colchetes de ouro) a uma moldura. */
+function gframe(cls: string): HTMLElement {
+  const f = el('div', `gframe ${cls}`);
+  for (const c of ['tl', 'tr', 'bl', 'br']) f.appendChild(el('i', `gcnr ${c}`));
+  return f;
+}
+/** Cabeçalho de painel: ícone dourado + rótulo + filete que se estende. */
+function phead(icon: string, label: string): HTMLElement {
+  const h = el('h2', 'sala-head');
+  const ic = el('span', 'sala-hic'); ic.innerHTML = icon;
+  h.appendChild(ic);
+  h.appendChild(el('span', 'sala-htx', label));
+  return h;
+}
+/** Rótulo de controle (Modo/Mapa/Terreno) com ícone. */
+function ctlLabel(icon: string, label: string): HTMLElement {
+  const s = el('span', 'ctl-label');
+  const ic = el('span', 'ctl-ic'); ic.innerHTML = icon;
+  s.appendChild(ic);
+  s.appendChild(el('span', '', label));
+  return s;
+}
+
 export class RoomScreen {
   readonly el: HTMLElement;
   private roomTitle: HTMLElement;
@@ -44,51 +79,79 @@ export class RoomScreen {
   private terrainBtns: { tr: TerrainKind; btn: HTMLButtonElement }[] = [];
 
   constructor(private deps: RoomScreenDeps) {
-    this.el = el('div', 'screen');
+    this.el = el('div', 'screen room-screen');
+    const sala = el('div', 'sala');
 
-    const card = el('div', 'panel card wide');
-    this.roomTitle = el('h2', '', t('room.title'));
-    card.appendChild(this.roomTitle);
+    // ---- Cabeçalho (brasão + título) ----
+    const top = gframe('sala-top');
+    const crest = el('span', 'sala-crest-wrap'); crest.innerHTML = CREST;
+    top.appendChild(crest);
+    this.roomTitle = el('h1', 'sala-title', t('room.title'));
+    top.appendChild(this.roomTitle);
+    sala.appendChild(top);
 
+    // ---- Tabuleiro (2 colunas) ----
+    const board = el('div', 'sala-board');
+
+    // Coluna JOGADORES
+    const pcol = gframe('sala-panel sala-players');
+    pcol.appendChild(phead(IC_PLAYERS, t('room.players')));
     this.rowsEl = el('div', 'player-rows');
-    card.appendChild(this.rowsEl);
+    pcol.appendChild(this.rowsEl);
+    const botbtns = el('div', 'sala-botbtns');
+    this.addBotBtn = el('button', 'btn add-bot', t('room.add_bot'));
+    this.addBotBtn.title = t('room.add_bot_desc');
+    this.addBotBtn.addEventListener('click', () => this.deps.onAddBot());
+    this.removeBotBtn = el('button', 'btn rem-bot', t('room.remove_bot'));
+    this.removeBotBtn.addEventListener('click', () => this.deps.onRemoveBot());
+    botbtns.appendChild(this.addBotBtn);
+    botbtns.appendChild(this.removeBotBtn);
+    pcol.appendChild(botbtns);
+    board.appendChild(pcol);
 
-    // Modo de jogo (só o host muda): Normal x Batalha/Rápido.
-    const modeRow = el('div', 'row mode-row');
-    modeRow.appendChild(el('span', 'mode-label', t('room.mode')));
+    // Coluna CONFIGURAÇÃO
+    const ccol = gframe('sala-panel sala-config');
+    ccol.appendChild(phead(IC_SWORDS, t('room.config')));
+
+    // Modo (Normal x Batalha) — só host
+    const modeCtl = el('div', 'sala-ctl');
+    modeCtl.appendChild(ctlLabel(IC_MODE, t('room.mode')));
+    const modeSeg = el('div', 'seg');
     const modeOpts: { m: GameMode; label: string; title: string }[] = [
       { m: 'normal', label: t('room.mode_normal'), title: t('room.mode_normal_desc') },
       { m: 'batalha', label: t('room.mode_battle'), title: t('room.mode_battle_desc') },
     ];
     for (const o of modeOpts) {
-      const btn = el('button', 'btn mode-btn', o.label);
+      const btn = el('button', 'btn seg-btn', o.label);
       btn.title = o.title;
       btn.addEventListener('click', () => this.deps.onSetMode(o.m));
       this.modeBtns.push({ m: o.m, btn });
-      modeRow.appendChild(btn);
+      modeSeg.appendChild(btn);
     }
-    card.appendChild(modeRow);
+    modeCtl.appendChild(modeSeg);
+    ccol.appendChild(modeCtl);
 
-    // Mapa aberto x fechado (névoa de guerra) — só o host; começa ABERTO.
-    const mapRow = el('div', 'row mode-row');
-    mapRow.appendChild(el('span', 'mode-label', t('room.map')));
+    // Mapa aberto x fechado (névoa) — só host
+    const mapCtl = el('div', 'sala-ctl');
+    mapCtl.appendChild(ctlLabel(IC_MAP, t('room.map')));
+    const mapSeg = el('div', 'seg');
     const mapOpts: { closed: boolean; label: string; title: string }[] = [
       { closed: false, label: t('room.map_open'), title: t('room.map_open_desc') },
       { closed: true, label: t('room.map_closed'), title: t('room.map_closed_desc') },
     ];
     for (const o of mapOpts) {
-      const btn = el('button', 'btn mode-btn', o.label);
+      const btn = el('button', 'btn seg-btn', o.label);
       btn.title = o.title;
       btn.addEventListener('click', () => this.deps.onSetFog(o.closed));
       this.fogBtns.push({ closed: o.closed, btn });
-      mapRow.appendChild(btn);
+      mapSeg.appendChild(btn);
     }
-    card.appendChild(mapRow);
+    mapCtl.appendChild(mapSeg);
+    ccol.appendChild(mapCtl);
 
-    // Terreno = o "mapa": Clássico (lagos) x Rio (vaus + peixes) x Travessia
-    // (rio dividindo, só cruza de barco) — só o host escolhe.
-    const terrRow = el('div', 'row mode-row terrain-row');
-    terrRow.appendChild(el('span', 'mode-label', t('room.terrain')));
+    // Terreno (Clássico / Rio / Travessia) — só host
+    const terrCtl = el('div', 'sala-ctl terrain');
+    terrCtl.appendChild(ctlLabel(IC_TERRAIN, t('room.terrain')));
     const terrCards = el('div', 'terrain-cards');
     const terrOpts: { tr: TerrainKind; label: string; desc: string }[] = [
       { tr: 'classic', label: t('room.terrain_classic'), desc: t('room.terrain_classic_desc') },
@@ -96,7 +159,7 @@ export class RoomScreen {
       { tr: 'strait', label: t('room.terrain_strait'), desc: t('room.terrain_strait_desc') },
     ];
     for (const o of terrOpts) {
-      const btn = el('button', 'btn mode-btn terrain-card');
+      const btn = el('button', 'btn terrain-card');
       const thumb = el('span', 'terrain-thumb');
       thumb.innerHTML = TERRAIN_THUMB_SVG[o.tr];
       btn.appendChild(thumb);
@@ -106,49 +169,48 @@ export class RoomScreen {
       this.terrainBtns.push({ tr: o.tr, btn });
       terrCards.appendChild(btn);
     }
-    terrRow.appendChild(terrCards);
-    card.appendChild(terrRow);
+    terrCtl.appendChild(terrCards);
+    ccol.appendChild(terrCtl);
 
-    const actions = el('div', 'row');
-    this.readyBtn = el('button', 'btn primary', t('room.ready'));
+    board.appendChild(ccol);
+    sala.appendChild(board);
+
+    // ---- Ações centrais ----
+    const actions = el('div', 'sala-actions');
+    this.readyBtn = el('button', 'btn primary sala-act', t('room.ready'));
     this.readyBtn.addEventListener('click', () => this.deps.onToggleReady());
-    this.startBtn = el('button', 'btn primary', t('room.start'));
+    this.startBtn = el('button', 'btn primary sala-act start', t('room.start'));
     this.startBtn.disabled = true;
     this.startBtn.addEventListener('click', () => this.deps.onStartGame());
-    this.addBotBtn = el('button', 'btn', t('room.add_bot'));
-    this.addBotBtn.title = t('room.add_bot_desc');
-    this.addBotBtn.addEventListener('click', () => this.deps.onAddBot());
-    this.removeBotBtn = el('button', 'btn', t('room.remove_bot'));
-    this.removeBotBtn.addEventListener('click', () => this.deps.onRemoveBot());
-    const leaveBtn = el('button', 'btn danger', t('room.leave'));
+    const leaveBtn = el('button', 'btn danger sala-act', t('room.leave'));
     leaveBtn.addEventListener('click', () => this.deps.onLeaveRoom());
     actions.appendChild(this.readyBtn);
-    actions.appendChild(this.addBotBtn);
-    actions.appendChild(this.removeBotBtn);
     actions.appendChild(this.startBtn);
     actions.appendChild(leaveBtn);
-    card.appendChild(actions);
+    sala.appendChild(actions);
 
-    const chatPanel = el('div', 'chat-panel');
-    chatPanel.appendChild(el('h2', '', t('room.chat')));
+    // ---- Chat ----
+    const chatPanel = gframe('sala-chat');
+    chatPanel.appendChild(phead(IC_CHAT, t('room.chat')));
     this.chatLog = el('div', 'chat-log');
     chatPanel.appendChild(this.chatLog);
-    this.chatInput = el('input', 'txt');
+    const chatBar = el('div', 'chat-bar');
+    this.chatInput = el('input', 'txt chat-in');
     this.chatInput.placeholder = t('room.chat_placeholder');
     this.chatInput.maxLength = 200;
-    this.chatInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const text = this.chatInput.value.trim();
-        if (text) {
-          this.deps.onChat(text);
-          this.chatInput.value = '';
-        }
-      }
-    });
-    chatPanel.appendChild(this.chatInput);
-    card.appendChild(chatPanel);
+    const sendChat = (): void => {
+      const text = this.chatInput.value.trim();
+      if (text) { this.deps.onChat(text); this.chatInput.value = ''; }
+    };
+    this.chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+    const sendBtn = el('button', 'btn chat-send', t('room.send'));
+    sendBtn.addEventListener('click', sendChat);
+    chatBar.appendChild(this.chatInput);
+    chatBar.appendChild(sendBtn);
+    chatPanel.appendChild(chatBar);
+    sala.appendChild(chatPanel);
 
-    this.el.appendChild(card);
+    this.el.appendChild(sala);
   }
 
   reset(): void {
@@ -169,17 +231,14 @@ export class RoomScreen {
     const me = this.players.find((p) => p.id === myId);
     const isHost = me?.isHost ?? false;
 
-    // Modo de jogo: destaca o ativo; só o host pode trocar.
     for (const { m, btn } of this.modeBtns) {
       btn.classList.toggle('primary', m === this.mode);
       btn.disabled = !isHost;
     }
-    // Mapa aberto/fechado: destaca o ativo; só o host troca.
     for (const { closed, btn } of this.fogBtns) {
       btn.classList.toggle('primary', closed === this.fog);
       btn.disabled = !isHost;
     }
-    // Terreno: destaca o ativo; só o host troca.
     for (const { tr, btn } of this.terrainBtns) {
       btn.classList.toggle('primary', tr === this.terrain);
       btn.disabled = !isHost;
@@ -206,37 +265,70 @@ export class RoomScreen {
 
   private renderRows(): void {
     this.rowsEl.innerHTML = '';
+    const meHost = this.players.find((x) => x.id === this.myId)?.isHost ?? false;
     for (const p of this.players) {
-      const row = el('div', 'player-row');
-      const swatch = el('span', 'swatch');
-      swatch.style.background = p.color;
-      row.appendChild(swatch);
-      row.appendChild(el('span', 'pname', p.name + (p.id === this.myId ? t('common.you_suffix') : '')));
-      const meHost = this.players.find((x) => x.id === this.myId)?.isHost ?? false;
+      const role = p.isHost ? 'host' : p.isBot ? 'bot' : 'human';
+      const card = el('div', `pcard ${role}`);
+
+      // X pra remover bot (só host)
+      if (p.isBot && meHost) {
+        const x = el('button', 'pcard-x', '✕');
+        x.title = t('room.remove_bot');
+        x.addEventListener('click', () => this.deps.onRemoveBot());
+        card.appendChild(x);
+      }
+
+      // Retrato (tingido pela cor do jogador)
+      const port = el('span', 'pcard-port');
+      port.style.setProperty('--pc', p.color);
+      port.innerHTML = p.isHost ? GLYPH_HOST : p.isBot ? GLYPH_BOT : GLYPH_PERSON;
+      card.appendChild(port);
+
+      const info = el('div', 'pcard-info');
+      const nameRow = el('div', 'pcard-name');
+      const sw = el('span', 'swatch'); sw.style.background = p.color;
+      nameRow.appendChild(sw);
+      nameRow.appendChild(el('span', 'nm', p.name + (p.id === this.myId ? t('common.you_suffix') : '')));
       if (p.isBot) {
-        row.appendChild(el('span', '', '🤖'));
-        // Dificuldade = chip clicável (só o host): cicla passivo -> ... -> agressivo.
         const diff = p.difficulty ?? 'normal';
-        const diffBtn = el('button', 'btn diff-chip', t(`room.diff_${diff}`));
-        diffBtn.title = t('room.bot_diff_tip');
-        diffBtn.disabled = !meHost;
-        diffBtn.addEventListener('click', () => {
+        const db = el('button', 'badge diff-chip', t(`room.diff_${diff}`));
+        db.title = t('room.bot_diff_tip');
+        db.disabled = !meHost;
+        db.addEventListener('click', () => {
           const next = DIFFICULTIES[(DIFFICULTIES.indexOf(diff) + 1) % DIFFICULTIES.length];
           this.deps.onSetBotDifficulty(p.id, next);
         });
-        row.appendChild(diffBtn);
+        nameRow.appendChild(db);
+      } else if (p.isHost) {
+        nameRow.appendChild(el('span', 'badge host-badge', t('room.host')));
       }
-      if (p.isHost) row.appendChild(el('span', '', '👑'));
-      // TIME (estilo AoE): chip por vaga; só o host alterna (— -> 1 -> 2 -> —).
+      info.appendChild(nameRow);
+
+      const meta = el('div', 'pcard-meta');
+      meta.appendChild(el('span', 'meta-lbl', `${t('room.team')}:`));
       const team = p.team ?? 0;
-      const teamBtn = el('button', `btn team-chip t${team}`, `${t('room.team')} ${team === 0 ? '—' : team}`);
-      teamBtn.title = t('room.team_tip');
-      teamBtn.disabled = !meHost;
-      teamBtn.addEventListener('click', () => this.deps.onSetTeam(p.id, (team + 1) % 3));
-      row.appendChild(teamBtn);
-      const tag = el('span', `ready-tag ${p.ready ? 'yes' : 'no'}`, p.ready ? t('room.tag_ready') : t('room.tag_waiting'));
-      row.appendChild(tag);
-      this.rowsEl.appendChild(row);
+      const tb = el('button', `team-chip t${team}`, `${team === 0 ? '—' : team} ▾`);
+      tb.title = t('room.team_tip');
+      tb.disabled = !meHost;
+      tb.addEventListener('click', () => this.deps.onSetTeam(p.id, (team + 1) % 3));
+      meta.appendChild(tb);
+      if (p.isHost) {
+        meta.appendChild(el('span', 'crown', '♛'));
+      } else {
+        meta.appendChild(el('span', `ready-pill ${p.ready ? 'yes' : 'no'}`, p.ready ? t('room.tag_ready') : t('room.tag_waiting')));
+      }
+      info.appendChild(meta);
+      card.appendChild(info);
+      this.rowsEl.appendChild(card);
+    }
+
+    // Vaga livre (se a sala não estiver cheia)
+    if (this.players.length < MAX_PLAYERS_PER_ROOM) {
+      const slot = el('div', 'pcard empty');
+      const port = el('span', 'pcard-port'); port.innerHTML = GLYPH_PERSON;
+      slot.appendChild(port);
+      slot.appendChild(el('span', 'empty-lbl', t('room.empty_slot')));
+      this.rowsEl.appendChild(slot);
     }
   }
 }

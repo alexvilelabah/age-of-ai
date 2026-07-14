@@ -10,6 +10,11 @@
   --muted: #a8987a;
   --red: #e05b52;
   --green: #6abf69;
+  /* Paleta ornamentada (molduras de ouro + pedra) — usada na Sala e no Lobby. */
+  --g1: #f6e7b4; --g2: #dcbb64; --g3: #b8912f; --g4: #7d5f22;
+  --st1: #161009; --st2: #1f1710; --st3: #2a2015;
+  --cream: #efe3c6; --parch: #cdbb90; --dim: #9a875f;
+  --gild: linear-gradient(135deg, #f6e7b4 0%, #d8b25a 34%, #8a6a20 62%, #e6c876 100%);
 }
 
 * { box-sizing: border-box; }
@@ -797,3 +802,208 @@ button.btn.trade-btn {
   font-size: 13px;
   color: var(--red);
 }
+
+/* ===================================================================
+   Sala (tela 3) — tabuleiro emoldurado em ouro, estilo AoE (desktop).
+   Tudo escopado em .room-screen pra não afetar as outras telas.
+   =================================================================== */
+.room-screen {
+  display: block;
+  overflow-y: auto;
+  padding: clamp(14px, 2.2vw, 30px);
+  align-items: initial;
+  justify-content: initial;
+}
+/* fundo de pedra escura (paleta do mockup) — sobrepõe a arte de castelo só aqui */
+.screen.room-screen::before {
+  background:
+    radial-gradient(120% 90% at 82% 12%, #241a10 0%, transparent 55%),
+    radial-gradient(140% 120% at 12% 105%, #1b140c 0%, transparent 60%),
+    linear-gradient(160deg, #100c07, #090603 72%);
+}
+.sala {
+  max-width: 1240px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: clamp(12px, 1.6vw, 20px);
+  color: var(--parch);
+}
+
+/* moldura de quadro (gilt) + cantos ornamentados */
+.gframe {
+  position: relative;
+  background: linear-gradient(180deg, var(--st2), var(--st1));
+  border: 3px solid transparent; border-image: var(--gild) 1;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.7), inset 0 0 0 4px rgba(216, 178, 90, 0.13),
+    inset 0 2px 30px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+.gcnr { position: absolute; width: 13px; height: 13px; border: 2px solid var(--g2); z-index: 2; }
+.gcnr.tl { top: 5px; left: 5px; border-right: 0; border-bottom: 0; }
+.gcnr.tr { top: 5px; right: 5px; border-left: 0; border-bottom: 0; }
+.gcnr.bl { bottom: 5px; left: 5px; border-right: 0; border-top: 0; }
+.gcnr.br { bottom: 5px; right: 5px; border-left: 0; border-top: 0; }
+
+/* cabeçalho */
+.sala-top { display: flex; align-items: center; gap: 18px; padding: 14px clamp(16px, 2vw, 26px); }
+.sala-crest-wrap { flex: 0 0 auto; line-height: 0; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6)); }
+.sala-crest { width: 50px; height: 56px; display: block; }
+.sala-title {
+  margin: 0; flex: 1; font-size: clamp(24px, 3vw, 40px); letter-spacing: 0.1em;
+  text-transform: uppercase; font-weight: 700; line-height: 1; font-variant: normal; text-shadow: none;
+  background: linear-gradient(#f8ecc4, #c9a24e); -webkit-background-clip: text; background-clip: text;
+  color: transparent; filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.7));
+}
+
+/* tabuleiro em 2 colunas */
+.sala-board { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.14fr); gap: clamp(12px, 1.6vw, 20px); align-items: start; }
+.sala-panel { padding: clamp(14px, 1.6vw, 20px); }
+.sala-head {
+  display: flex; align-items: center; gap: 10px; margin: 0 0 14px; padding: 0; border: 0;
+  font-size: 15px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--g1); font-weight: 700; font-variant: normal;
+}
+.sala-hic { width: 20px; height: 20px; color: var(--g2); flex: 0 0 auto; line-height: 0; }
+.sala-hic svg { width: 20px; height: 20px; display: block; }
+.sala-htx { flex: 0 0 auto; }
+.sala-head::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(216, 178, 90, 0.5), transparent); }
+
+/* cartões de jogador */
+.room-screen .player-rows { display: flex; flex-direction: column; gap: 12px; }
+.pcard {
+  position: relative; display: flex; align-items: center; gap: 14px; padding: 12px 14px;
+  border: 1.5px solid var(--g4); border-radius: 4px; overflow: hidden;
+  background: linear-gradient(90deg, rgba(94, 139, 205, 0.13), rgba(20, 15, 9, 0.15) 62%);
+}
+.pcard.bot { background: linear-gradient(90deg, rgba(192, 86, 70, 0.13), rgba(20, 15, 9, 0.15) 62%); }
+.pcard.human { background: linear-gradient(90deg, rgba(122, 163, 72, 0.12), rgba(20, 15, 9, 0.15) 62%); }
+.pcard.empty { color: var(--dim); border-style: dashed; opacity: 0.72; background: rgba(20, 15, 9, 0.25); }
+.pcard-port {
+  width: 54px; height: 54px; flex: 0 0 auto; border-radius: 4px; border: 1.5px solid var(--g3);
+  display: grid; place-items: center; line-height: 0; box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.5);
+  background: radial-gradient(circle at 42% 32%, color-mix(in srgb, var(--pc, #888) 34%, #0c0906), #0c0906);
+}
+.pcard-port svg { width: 32px; height: 32px; display: block; }
+.pcard.empty .pcard-port { border-style: dashed; border-color: var(--g4); background: rgba(0, 0, 0, 0.25); }
+.pcard-info { flex: 1; min-width: 0; }
+.pcard-name { display: flex; align-items: center; gap: 8px; font-size: 18px; color: var(--cream); flex-wrap: wrap; }
+.pcard-name .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, 0.35); flex: 0 0 auto; }
+.pcard-name .nm { overflow: hidden; text-overflow: ellipsis; }
+.pcard.host .nm { color: #a9c6f2; }
+.pcard.bot .nm { color: #efb1a5; }
+.pcard-meta { display: flex; align-items: center; gap: 9px; margin-top: 8px; font-size: 13px; color: var(--dim); }
+.meta-lbl { color: var(--dim); }
+.pcard-x {
+  position: absolute; top: 8px; right: 9px; width: 22px; height: 22px; border-radius: 3px; cursor: pointer;
+  font-size: 11px; padding: 0; line-height: 1; display: grid; place-items: center;
+  color: #e6a99e; border: 1px solid #6e2c22; background: rgba(70, 25, 18, 0.5);
+}
+.pcard-x:hover { border-color: var(--red); color: #f4c9c0; }
+.empty-lbl { font-style: normal; }
+.crown { color: var(--g1); font-size: 16px; }
+
+/* chips (badge host / dificuldade / time / pronto) dentro da sala */
+.room-screen .badge { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; padding: 2px 8px; border-radius: 3px; border: 1px solid; white-space: nowrap; }
+.host-badge { color: #bcd6ff; border-color: #3f6191; background: rgba(63, 97, 145, 0.28); }
+.room-screen .diff-chip { font-family: inherit; color: #f3d7a0; border-color: var(--g4); background: rgba(184, 145, 47, 0.16); cursor: pointer; }
+.room-screen .diff-chip:disabled { opacity: 0.75; cursor: default; }
+.room-screen .team-chip {
+  font-family: inherit; display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--parch);
+  background: linear-gradient(180deg, var(--st3), var(--st1)); border: 1px solid var(--g4); border-radius: 3px; padding: 4px 11px; cursor: pointer;
+}
+.room-screen .team-chip.t1 { border-color: #4c86c8; color: #9cc4ee; }
+.room-screen .team-chip.t2 { border-color: #c85555; color: #f0a2a2; }
+.room-screen .team-chip:disabled { opacity: 0.75; cursor: default; }
+.ready-pill { font-size: 12px; padding: 2px 9px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.ready-pill.yes { color: var(--green); border-color: #3f6b3e; background: rgba(106, 191, 105, 0.1); }
+.ready-pill.no { color: var(--dim); border-color: var(--g4); }
+
+.sala-botbtns { display: flex; gap: 10px; margin-top: 2px; }
+.sala-botbtns .btn { flex: 1; }
+.room-screen .add-bot { border-color: #3f6191; color: #cfe0f7; }
+.room-screen .rem-bot { border-color: #7a2e26; color: #eec4bb; }
+
+/* configuração da partida */
+.sala-config { display: flex; flex-direction: column; }
+.sala-config .sala-ctl { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 14px; margin-bottom: 16px; }
+.sala-config .sala-ctl:last-child { margin-bottom: 0; }
+.ctl-label { display: flex; align-items: center; gap: 8px; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--parch); }
+.ctl-ic { width: 16px; height: 16px; color: var(--g3); flex: 0 0 auto; line-height: 0; }
+.ctl-ic svg { width: 16px; height: 16px; display: block; }
+.seg { display: flex; border: 1.5px solid var(--g4); border-radius: 4px; overflow: hidden; }
+.seg .btn { flex: 1; border: 0; border-radius: 0; box-shadow: none; padding: 9px 10px; font-size: 14px; color: var(--cream); background: linear-gradient(180deg, var(--st3), var(--st1)); }
+.seg .btn + .btn { border-left: 1px solid var(--g4); }
+.seg .btn.primary { color: #231a0a; font-weight: 700; background: var(--gild); text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3); }
+
+.sala-ctl.terrain { align-items: start; }
+.room-screen .terrain-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; flex: none; flex-wrap: nowrap; }
+.room-screen .terrain-card {
+  display: flex; flex-direction: column; align-items: center; gap: 0; position: relative; cursor: pointer;
+  padding: 8px 8px 11px; border-radius: 5px; text-align: center; min-width: 0; box-shadow: none;
+  border: 1.5px solid var(--g4); background: linear-gradient(180deg, var(--st2), var(--st1));
+}
+.room-screen .terrain-card:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--g2); color: var(--cream); }
+.room-screen .terrain-card.primary { border-color: var(--g1); box-shadow: 0 0 0 1px var(--g2), 0 0 16px rgba(216, 178, 90, 0.28); background: linear-gradient(180deg, var(--st3), var(--st1)); }
+.room-screen .terrain-card:disabled { opacity: 0.92; cursor: default; }
+.room-screen .terrain-thumb { display: block; width: 100%; height: auto; aspect-ratio: 3 / 2; border-radius: 3px; overflow: hidden; border: 1px solid rgba(0, 0, 0, 0.6); box-shadow: inset 0 0 0 1px rgba(216, 178, 90, 0.3); }
+.room-screen .terrain-thumb svg { display: block; width: 100%; height: 100%; }
+.room-screen .terrain-name { display: block; margin-top: 8px; font-size: 15px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--cream); font-weight: 600; }
+.room-screen .terrain-card.primary .terrain-name { color: var(--g1); }
+.room-screen .terrain-desc { display: block; margin-top: 4px; font-size: 11px; line-height: 1.35; color: var(--dim); white-space: normal; font-weight: normal; }
+
+/* ações centrais */
+.sala-actions { display: flex; justify-content: center; gap: 16px; }
+.sala-act { padding: 13px 30px; font-size: 16px; letter-spacing: 0.05em; text-transform: uppercase; }
+.room-screen .sala-act.primary:not(:disabled) {
+  background: var(--gild); color: #231a0a; border-color: var(--g2); font-weight: 700; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 3px 10px rgba(0, 0, 0, 0.5);
+}
+.room-screen .sala-act.danger { border-color: #8a3a2e; color: #f0cfc6; background: linear-gradient(180deg, #4c211a, #31150f); }
+.room-screen .sala-act.danger:hover { border-color: var(--red); color: #f4d5cd; }
+
+/* chat */
+.sala-chat { padding: 14px clamp(14px, 1.6vw, 20px) 16px; }
+.room-screen .chat-log { height: 104px; overflow-y: auto; padding: 10px 12px; margin-bottom: 10px; border-radius: 4px; background: rgba(0, 0, 0, 0.32); border: 1px solid rgba(216, 178, 90, 0.18); font-size: 14px; line-height: 1.7; gap: 2px; }
+.chat-bar { display: flex; gap: 10px; }
+.room-screen .chat-in { flex: 1; font-size: 14px; color: var(--cream); padding: 11px 14px; border-radius: 4px; background: rgba(0, 0, 0, 0.35); border: 1.5px solid var(--g4); }
+.room-screen .chat-in:focus { border-color: var(--g2); box-shadow: 0 0 0 2px rgba(216, 178, 90, 0.2); }
+.chat-send { flex: 0 0 auto; padding: 11px 22px; }
+
+/* ===================================================================
+   Lobby (tela 2) — mesma vibe ornamentada da Sala: painel emoldurado
+   em ouro, fundo de pedra escura e um emblema heráldico sutil.
+   =================================================================== */
+.screen.lobby-screen::before {
+  background:
+    radial-gradient(120% 90% at 82% 12%, #241a10 0%, transparent 55%),
+    radial-gradient(140% 120% at 12% 105%, #1b140c 0%, transparent 60%),
+    linear-gradient(160deg, #100c07, #090603 72%);
+}
+/* emblema heráldico (escudo + coroa) — grande, faint, atrás do painel */
+.lobby-emblem { position: fixed; inset: 0; z-index: -1; display: grid; place-items: center; opacity: 0.09; pointer-events: none; }
+.lobby-emblem svg { width: min(78vh, 660px); height: auto; filter: drop-shadow(0 0 46px rgba(216, 178, 90, 0.18)); }
+
+.lobby-panel { position: relative; z-index: 1; width: 500px; max-width: 92vw; padding: 20px 24px 22px; display: flex; flex-direction: column; gap: 14px; color: var(--parch); }
+.lobby-panel .sala-head { margin: 0; }
+
+.lobby-screen .room-list { display: flex; flex-direction: column; gap: 10px; max-height: min(52vh, 430px); overflow-y: auto; padding-right: 4px; }
+.lobby-screen .room-item {
+  display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 5px;
+  background: linear-gradient(180deg, rgba(31, 23, 16, 0.5), rgba(20, 15, 9, 0.4));
+  border: 1.5px solid var(--g4);
+  transition: border-color 0.14s;
+}
+.lobby-screen .room-item:hover { border-color: var(--g3); }
+.lr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lobby-screen .room-item .name { font-weight: 700; color: var(--cream); font-size: 17px; overflow: hidden; text-overflow: ellipsis; }
+.lobby-screen .room-item .info { color: var(--dim); font-size: 13px; }
+.lobby-screen .room-item .badge {
+  font-size: 11.5px; letter-spacing: 0.03em; padding: 3px 11px; border-radius: 999px; border: 1px solid; white-space: nowrap;
+}
+.lobby-screen .badge.waiting { color: var(--green); border-color: #3f6b3e; background: rgba(106, 191, 105, 0.1); }
+.lobby-screen .badge.ingame { color: var(--red); border-color: #7a3b34; background: rgba(224, 91, 82, 0.08); }
+.lobby-screen .room-item .btn { flex: 0 0 auto; padding: 8px 22px; }
+
+.lobby-actions { display: flex; gap: 12px; }
+.lobby-actions .btn { flex: 1; padding: 12px; font-size: 15px; letter-spacing: 0.04em; }
+.lobby-screen .lobby-create.primary {
+  background: var(--gild); color: #231a0a; border-color: var(--g2); font-weight: 700; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.lobby-screen .empty { color: var(--dim); text-align: center; padding: 26px; font-style: italic; }
