@@ -38,11 +38,16 @@ let pendingName = ''; // nome sendo confirmado (salvo no localStorage quando o s
 
 let gameScreen: GameScreen | null = null;
 let gamePaused = false; // partida pausada (autoritativo do servidor); tecla P alterna
+// Ao cair em jogo, espera uns segundos antes de mostrar "conexão perdida" — um
+// soluço rápido de rede reconecta sozinho e o jogador nem percebe. O gameStart
+// da retomada limpa este timer.
+let connLostTimer: number | null = null;
 const gameOverScreen = new GameOverScreen({
   onBackToLobby: () => {
     gameOverScreen.hide();
     teardownGame();
-    showScreen('lobby');
+    net.send({ type: 'leaveRoom' }); // sai da sala de verdade (senão o servidor te
+    showScreen('lobby');             // mantém preso nela e "Criar sala" recusa)
     net.send({ type: 'listRooms' });
   },
 });
@@ -71,6 +76,17 @@ const settingsOverlay = new SettingsOverlay({
       saveSettings();
       location.reload();
     }
+  },
+  // "Sair da sala" pela engrenagem (funciona na sala E no meio do jogo). Em jogo o
+  // servidor trata como desistência (o adversário ganha). Sai otimista pro lobby; o
+  // servidor confirma com leftRoom e, se um gameOver chegar atrasado, o guard ignora.
+  onLeaveRoom: () => {
+    settingsOverlay.hide();
+    net.send({ type: 'leaveRoom' });
+    gameOverScreen.hide();
+    teardownGame();
+    showScreen('lobby');
+    net.send({ type: 'listRooms' });
   },
 });
 document.body.appendChild(settingsOverlay.el);
@@ -137,6 +153,8 @@ function showScreen(name: ScreenName): void {
   app!.innerHTML = '';
   app!.appendChild(screenEl(name));
   if (name === 'name') nameScreen.focus();
+  // engrenagem mostra "Sair da sala" só em sala/jogo; em jogo pede confirmação
+  settingsOverlay.setLeaveContext(name === 'room' || name === 'game', name === 'game');
   // trilha por tela: abertura nos menus, faixas de fundo dentro da partida
   music.setState(name === 'game' ? 'game' : 'menu');
 }
@@ -159,14 +177,26 @@ net.onStatus = (status) => {
   if (status === 'open') {
     connBadge.textContent = '';
     connBadge.classList.remove('hidden');
-    // Se estávamos no meio de uma partida quando a conexão caiu e reconectou,
-    // o servidor reenviará o estado apropriado (roomList/roomState) — o app
-    // permanece na tela atual até novo comando do servidor.
+    // Reconectou no meio de uma partida: re-identifica com o nome salvo + clientId
+    // pra o servidor RETOMAR a partida de onde parou (resumeGame → gameStart), sem
+    // precisar de F5. É o que faz um soluço de rede passar quase despercebido.
+    if (current === 'game') {
+      const savedName = getSavedName();
+      if (savedName) net.send({ type: 'setName', name: savedName, clientId: getClientId() });
+    }
   } else if (status === 'connecting') {
     connBadge.textContent = current === 'name' || current === 'lobby' ? t('conn.connecting') : '';
   } else if (status === 'closed') {
     if (current === 'game') {
-      gameScreen?.showConnLost();
+      // Não avisa na hora: dá ~4s pra reconexão automática retomar sozinha (o
+      // gameStart da retomada cancela este timer). Só mostra "conexão perdida" se
+      // a queda persistir — aí o jogador decide voltar ao lobby.
+      if (connLostTimer === null) {
+        connLostTimer = window.setTimeout(() => {
+          connLostTimer = null;
+          if (current === 'game') gameScreen?.showConnLost();
+        }, 4000);
+      }
     } else {
       connBadge.textContent = t('conn.lost_retry');
     }
@@ -249,6 +279,8 @@ function dispatch(msg: ServerMessage): void {
       break;
     }
     case 'gameStart': {
+      // retomamos a partida (início OU reconexão) — cancela o aviso de "conexão perdida"
+      if (connLostTimer !== null) { clearTimeout(connLostTimer); connLostTimer = null; }
       teardownGame();
       gameOverScreen.hide();
       gamePaused = false;
@@ -259,6 +291,7 @@ function dispatch(msg: ServerMessage): void {
         onPing: (x, y) => net.send({ type: 'ping', x, y }),
         onBackToLobby: () => {
           teardownGame();
+          net.send({ type: 'leaveRoom' }); // sai da sala pra não ficar preso nela
           showScreen('lobby');
           net.send({ type: 'listRooms' });
         },
@@ -290,6 +323,9 @@ function dispatch(msg: ServerMessage): void {
       break;
     }
     case 'gameOver': {
+      // Se já saímos pro lobby (ex.: desistimos pela engrenagem), ignora um gameOver
+      // que chegue atrasado — senão abriria o overlay de fim por cima do lobby.
+      if (current !== 'game') break;
       const youWon = msg.won ?? (msg.winner === myPlayerId);
       gameScreen?.state.fog.revealAll(); // fim de jogo revela o mapa (estilo AoE)
       gameOverScreen.show(youWon, msg.winnerName);

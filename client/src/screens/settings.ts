@@ -14,12 +14,18 @@ export interface SettingsDeps {
   onSfxVol: (v: number) => void;     // 0..1
   onRenderScale: (s: number) => void; // 1 | 0.75 | 0.5
   onLang: (lang: Lang) => void;       // troca de idioma (main decide reload x ao vivo)
+  onLeaveRoom: () => void;            // "Sair da sala" (em jogo = desistir); main manda leaveRoom
 }
 
 export class SettingsOverlay {
   readonly el: HTMLElement;
   private scaleBtns: { s: number; btn: HTMLButtonElement }[] = [];
   private card: HTMLElement;
+  // "Sair da sala": só aparece em sala/jogo; em jogo pede confirmação de 2 toques.
+  private leaveBtn?: HTMLButtonElement;
+  private canLeave = false;
+  private leaveInGame = false;
+  private confirming = false;
 
   constructor(private deps: SettingsDeps) {
     this.el = el('div', 'overlay hidden');
@@ -34,6 +40,23 @@ export class SettingsOverlay {
     this.scaleBtns = [];
     const card = el('div', 'panel card opt-card');
     card.appendChild(el('h2', '', t('opt.title')));
+
+    // "Sair da sala" — no topo, só visível em sala/jogo (main chama setLeaveContext).
+    // Em jogo, sair = desistir (o adversário ganha), então pede confirmação de 2 toques.
+    this.confirming = false;
+    const leaveBtn = el('button', 'btn danger', t('room.leave'));
+    leaveBtn.classList.toggle('hidden', !this.canLeave);
+    leaveBtn.addEventListener('click', () => {
+      if (this.leaveInGame && !this.confirming) {
+        this.confirming = true;
+        leaveBtn.textContent = t('room.leave_confirm');
+        return;
+      }
+      this.confirming = false;
+      this.deps.onLeaveRoom();
+    });
+    this.leaveBtn = leaveBtn;
+    card.appendChild(leaveBtn);
 
     // Idioma da interface. A troca vai pro main via onLang: fora do jogo ele
     // recarrega (reconecta ao lobby); no jogo, troca ao vivo sem derrubar a partida.
@@ -107,7 +130,22 @@ export class SettingsOverlay {
     for (const { s: bs, btn } of this.scaleBtns) btn.classList.toggle('active', Math.abs(bs - s) < 0.001);
   }
 
+  /** main avisa em qual tela estamos: mostra "Sair da sala" só em sala/jogo, e liga
+   *  a confirmação de 2 toques quando em jogo (sair = desistir da partida). */
+  setLeaveContext(canLeave: boolean, inGame: boolean): void {
+    this.canLeave = canLeave;
+    this.leaveInGame = inGame;
+    this.confirming = false;
+    if (this.leaveBtn) {
+      this.leaveBtn.classList.toggle('hidden', !canLeave);
+      this.leaveBtn.textContent = t('room.leave');
+    }
+  }
+
   show(): void {
+    // reabrir zera a confirmação pendente (evita sair no 1º toque de uma abertura antiga)
+    this.confirming = false;
+    if (this.leaveBtn) this.leaveBtn.textContent = t('room.leave');
     this.el.classList.remove('hidden');
   }
 

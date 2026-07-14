@@ -348,10 +348,10 @@ export class Lobby {
   }
 
   private createRoom(conn: Connection): void {
-    if (conn.roomId) {
-      conn.send({ type: 'error', code: 'err.already_in_room' });
-      return;
-    }
+    // Se por algum motivo ainda está preso numa sala antiga (ex.: voltou do fim de
+    // jogo, ou um leaveRoom se perdeu na rede), sai dela antes — "Criar sala" nunca
+    // deve dar beco sem saída.
+    if (conn.roomId) this.removeFromRoom(conn, conn.roomId);
     const id = this.genRoomId();
     const room: Room = {
       id,
@@ -375,10 +375,10 @@ export class Lobby {
   }
 
   private joinRoom(conn: Connection, roomId: string): void {
-    if (conn.roomId) {
-      conn.send({ type: 'error', code: 'err.already_in_room' });
-      return;
-    }
+    // Preso numa sala antiga? Sai dela antes de entrar na nova (mesma rede de
+    // segurança do createRoom) em vez de recusar.
+    if (conn.roomId && conn.roomId !== roomId) this.removeFromRoom(conn, conn.roomId);
+    if (conn.roomId === roomId) return; // já está nessa sala
     const room = this.rooms.get(roomId);
     if (!room) {
       conn.send({ type: 'error', code: 'err.room_not_found' });
@@ -401,8 +401,21 @@ export class Lobby {
 
   private leaveRoom(conn: Connection): void {
     if (!conn.roomId) return;
-    this.removeFromRoom(conn, conn.roomId);
+    const roomId = conn.roomId;
+    const r = this.rooms.get(roomId);
+    const wasInGame = !!(r?.inGame && r.game);
+    // Sai da SALA primeiro (limpa conn.roomId, tira o membro) — assim os broadcasts
+    // do fim de jogo não voltam pra quem está saindo (ele já vai pro lobby).
+    this.removeFromRoom(conn, roomId);
     conn.send({ type: 'leftRoom' });
+    // Em jogo, sair = DESISTIR: marca derrotado pra checkVictory dar a vitória ao
+    // adversário (envia 'gameOver' venceu + dispara onGameOver). Se removeFromRoom
+    // já fechou a sala (sem humano, ex.: vs bots), stillRoom some e pula — não há a
+    // quem dar vitória.
+    if (wasInGame) {
+      const stillRoom = this.rooms.get(roomId);
+      if (stillRoom?.game) stillRoom.game.markDefeated(conn.id);
+    }
   }
 
   private removeFromRoom(conn: Connection, roomId: string): void {
