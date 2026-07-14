@@ -6,10 +6,13 @@
 import { Game } from '../server/src/game/room.ts';
 import { buildingsToAdvance, countsForAgeUp } from '../shared/src/constants.ts';
 
-const errors: string[] = [];
+// O servidor manda o erro como CÓDIGO + params (traduzido no cliente via i18n),
+// não como texto pronto — então capturamos {code, params} e conferimos o código.
+type ErrEntry = { code: string; params?: Record<string, string | number> };
+const errors: ErrEntry[] = [];
 const members = [{ id: 1, name: 'A', color: '#f00' }];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const g: any = new Game(members as any, (_pid: number, msg: { type: string; message?: string }) => { if (msg.type === 'error' && msg.message) errors.push(msg.message); }, () => {});
+const g: any = new Game(members as any, (_pid: number, msg: { type: string; code?: string; params?: Record<string, string | number> }) => { if (msg.type === 'error' && msg.code) errors.push({ code: msg.code, params: msg.params }); }, () => {});
 
 const p = g.players.get(1);
 p.age = 1;
@@ -60,24 +63,24 @@ g.units.set(500, { id: 500, owner: 1, type: 'villager', x: 5, y: 5, hp: 30, stat
 const mill = [...g.buildings.values()].find((b: { type: string }) => b.type === 'mill');
 g.buildings.delete(mill.id);
 errors.length = 0; g.cmdBuild(1, [500], 'farm', 30, 30, false);
-check('fazenda SEM moinho: BLOQUEADA', errors.some(e => e.includes('Moinho')));
+check('fazenda SEM moinho: BLOQUEADA', errors.some(e => e.code === 'err.requires_building' && e.params?.building === 'mill'));
 
 // com Moinho de volta, fazenda passa a valer
 addB('mill');
 errors.length = 0; g.cmdBuild(1, [500], 'farm', 30, 30, false);
-check('fazenda COM moinho: LIBERADA', !errors.some(e => e.includes('Moinho')));
+check('fazenda COM moinho: LIBERADA', !errors.some(e => e.code === 'err.requires_building' && e.params?.building === 'mill'));
 
 // pré-requisito: ARQUEARIA sem Quartel (na era 2) é bloqueada
 p.age = 2;
 for (const b of [...g.buildings.values()]) if (b.type === 'barracks') g.buildings.delete(b.id);
 errors.length = 0; g.cmdBuild(1, [500], 'archery_range', 40, 40, false);
-check('arquearia SEM quartel: BLOQUEADA', errors.some(e => e.includes('Quartel')));
+check('arquearia SEM quartel: BLOQUEADA', errors.some(e => e.code === 'err.requires_building' && e.params?.building === 'barracks'));
 
 // prédio acima da era segue bloqueado (Estábulo na era 1)
 p.age = 1;
 addB('barracks');
 errors.length = 0; g.cmdBuild(1, [500], 'stable', 44, 44, false);
-check('estábulo na era 1: BLOQUEADO (era)', errors.some(e => e.includes('Idade')));
+check('estábulo na era 1: BLOQUEADO (era)', errors.some(e => e.code === 'err.requires_age'));
 
 console.log(fail === 0 ? '\nTODOS OS TESTES DE PROGRESSÃO PASSARAM' : `\n${fail} FALHA(S)`);
 process.exit(fail === 0 ? 0 : 1);

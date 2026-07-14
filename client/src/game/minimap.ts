@@ -3,7 +3,7 @@
 // Mostra terreno, entidades nas cores dos donos e o retângulo da câmera;
 // clique/arrasto move a câmera.
 
-import { BUILDING_DEFS, TILE_WATER } from '@age/shared';
+import { BUILDING_DEFS, TILE_SHALLOW, TILE_WATER } from '@age/shared';
 import { t } from '../i18n';
 import type { GameState } from '../state';
 import { el } from '../ui';
@@ -136,7 +136,7 @@ export class Minimap {
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         const v = this.gs.map.tiles[y * size + x];
-        ctx.fillStyle = v === TILE_WATER ? '#2b5e8c' : '#3b5528';
+        ctx.fillStyle = v === TILE_WATER ? '#2b5e8c' : v === TILE_SHALLOW ? '#c2b184' : '#3b5528';
         ctx.fillRect(x, y, 1, 1);
       }
     }

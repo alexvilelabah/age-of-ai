@@ -1,10 +1,11 @@
 // Tela 3: Sala — lista de jogadores (cor, pronto, coroa de host), toggle
 // "Pronto", "Iniciar partida" (só host), "Sair da sala" e chat.
 
-import type { BotDifficulty, GameMode, RoomPlayer } from '@age/shared';
+import type { BotDifficulty, GameMode, RoomPlayer, TerrainKind } from '@age/shared';
 import { MAX_PLAYERS_PER_ROOM, MIN_PLAYERS_TO_START } from '@age/shared';
 import { el } from '../ui';
 import { t } from '../i18n';
+import { TERRAIN_THUMB_SVG } from './terrainThumbs';
 
 export interface RoomScreenDeps {
   onToggleReady: () => void;
@@ -16,6 +17,7 @@ export interface RoomScreenDeps {
   onSetTeam: (playerId: number, team: number) => void;
   onSetMode: (mode: GameMode) => void;
   onSetFog: (fog: boolean) => void;
+  onSetTerrain: (terrain: TerrainKind) => void;
   onSetBotDifficulty: (botId: number, difficulty: BotDifficulty) => void;
 }
 
@@ -36,8 +38,10 @@ export class RoomScreen {
   private myId = -1;
   private mode: GameMode = 'normal';
   private fog = false;
+  private terrain: TerrainKind = 'classic';
   private modeBtns: { m: GameMode; btn: HTMLButtonElement }[] = [];
   private fogBtns: { closed: boolean; btn: HTMLButtonElement }[] = [];
+  private terrainBtns: { tr: TerrainKind; btn: HTMLButtonElement }[] = [];
 
   constructor(private deps: RoomScreenDeps) {
     this.el = el('div', 'screen');
@@ -80,6 +84,30 @@ export class RoomScreen {
       mapRow.appendChild(btn);
     }
     card.appendChild(mapRow);
+
+    // Terreno = o "mapa": Clássico (lagos) x Rio (vaus + peixes) x Travessia
+    // (rio dividindo, só cruza de barco) — só o host escolhe.
+    const terrRow = el('div', 'row mode-row terrain-row');
+    terrRow.appendChild(el('span', 'mode-label', t('room.terrain')));
+    const terrCards = el('div', 'terrain-cards');
+    const terrOpts: { tr: TerrainKind; label: string; desc: string }[] = [
+      { tr: 'classic', label: t('room.terrain_classic'), desc: t('room.terrain_classic_desc') },
+      { tr: 'river', label: t('room.terrain_river'), desc: t('room.terrain_river_desc') },
+      { tr: 'strait', label: t('room.terrain_strait'), desc: t('room.terrain_strait_desc') },
+    ];
+    for (const o of terrOpts) {
+      const btn = el('button', 'btn mode-btn terrain-card');
+      const thumb = el('span', 'terrain-thumb');
+      thumb.innerHTML = TERRAIN_THUMB_SVG[o.tr];
+      btn.appendChild(thumb);
+      btn.appendChild(el('span', 'terrain-name', o.label));
+      btn.appendChild(el('span', 'terrain-desc', o.desc));
+      btn.addEventListener('click', () => this.deps.onSetTerrain(o.tr));
+      this.terrainBtns.push({ tr: o.tr, btn });
+      terrCards.appendChild(btn);
+    }
+    terrRow.appendChild(terrCards);
+    card.appendChild(terrRow);
 
     const actions = el('div', 'row');
     this.readyBtn = el('button', 'btn primary', t('room.ready'));
@@ -128,11 +156,12 @@ export class RoomScreen {
     this.chatInput.value = '';
   }
 
-  setState(roomId: string, players: RoomPlayer[], myId: number, mode: GameMode = 'normal', fog = false): void {
+  setState(roomId: string, players: RoomPlayer[], myId: number, mode: GameMode = 'normal', fog = false, terrain: TerrainKind = 'classic'): void {
     this.players = Array.isArray(players) ? players : [];
     this.myId = myId;
     this.mode = mode;
     this.fog = fog;
+    this.terrain = terrain;
     const host = this.players.find((p) => p.isHost);
     this.roomTitle.textContent = host ? t('lobby.room_of', { host: host.name }) : t('room.room_n', { id: roomId });
     this.renderRows();
@@ -148,6 +177,11 @@ export class RoomScreen {
     // Mapa aberto/fechado: destaca o ativo; só o host troca.
     for (const { closed, btn } of this.fogBtns) {
       btn.classList.toggle('primary', closed === this.fog);
+      btn.disabled = !isHost;
+    }
+    // Terreno: destaca o ativo; só o host troca.
+    for (const { tr, btn } of this.terrainBtns) {
+      btn.classList.toggle('primary', tr === this.terrain);
       btn.disabled = !isHost;
     }
     this.readyBtn.textContent = me?.ready ? t('room.not_ready') : t('room.ready');

@@ -61,6 +61,14 @@ for (let i = 1; i < 4; i++) if (slot(before, i) !== slot(after, i)) othersStable
 check('no :00 as outras salas NÃO trocam junto (staggered)', othersStable);
 check('no :00 a sala 0 troca', slot(before, 0) !== slot(after, 0));
 
+// --- DERIVA da lotação: dentro da MESMA hora (nome estável), a conta oscila ---
+const countAt = (min: number, i: number): number | undefined =>
+  at(min).find((r) => r.id.startsWith(`live-${i}-`))?.playerCount;
+let driftSeen = false;
+const c0 = countAt(2, 0);
+for (let m = 2; m < 55; m += 2) if (countAt(m, 0) !== c0) driftSeen = true;
+check('lotação oscila dentro da hora (sala parece viva, gente entra/sai)', driftSeen);
+
 // --- oscilação real do total: aparecem 4, 5 E 6 ao longo do tempo ---
 const counts = new Set<number>();
 for (let h = 0; h < 400; h++) counts.add(generateFakeRooms(h * HOUR + 5 * MIN, MAX).length);

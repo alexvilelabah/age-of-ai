@@ -24,6 +24,7 @@ import {
   TECH_DEFS,
   TRADE_LOT,
   TRAIN_QUEUE_MAX,
+  TRANSPORT_CAP,
   UNIT_AGE_REQ,
   UNIT_DEFS,
   techBonus,
@@ -60,10 +61,12 @@ export interface HudDeps {
   onTrade: (action: 'buy' | 'sell', resource: 'food' | 'wood' | 'stone') => void;
   onChat: (text: string) => void;
   onIdleVillager: () => void;
+  /** Desembarcar o transporte selecionado (id do barco). */
+  onUnload: (transportId: number) => void;
   getPlacement: () => BuildingType | null;
 }
 
-const BUILD_ORDER: BuildingType[] = ['house', 'farm', 'mill', 'lumber_camp', 'mining_camp', 'barracks', 'archery_range', 'stable', 'blacksmith', 'market', 'wall', 'watch_tower', 'town_center'];
+const BUILD_ORDER: BuildingType[] = ['house', 'farm', 'mill', 'lumber_camp', 'mining_camp', 'dock', 'barracks', 'archery_range', 'stable', 'blacksmith', 'market', 'wall', 'watch_tower', 'town_center'];
 const RES_ORDER: ResourceType[] = ['food', 'wood', 'gold', 'stone'];
 
 /** Ícones da barra de recursos DESENHADOS (SVG inline). Emojis de madeira/ouro/
@@ -385,10 +388,20 @@ export class Hud {
     if (u.owner !== this.gs.you) {
       this.selPanel.appendChild(el('div', 'sel-line', t('hud.player', { name: this.gs.nameOf(u.owner) })));
     }
-    if (u.type === 'villager' && (u.carryAmount ?? 0) > 0 && u.carryType) {
+    if ((u.type === 'villager' || u.type === 'fishing_boat') && (u.carryAmount ?? 0) > 0 && u.carryType) {
       this.selPanel.appendChild(
         el('div', 'sel-line', t('hud.carrying', { amt: Math.floor(u.carryAmount ?? 0), icon: RESOURCE_ICONS[u.carryType] })),
       );
+    }
+    // Transporte: quantos a bordo + botão de DESEMBARCAR na costa (tecla U)
+    if (u.type === 'transport' && u.owner === this.gs.you) {
+      this.selPanel.appendChild(el('div', 'sel-line', t('hud.aboard', { n: u.garrison ?? 0, max: TRANSPORT_CAP })));
+      if ((u.garrison ?? 0) > 0) {
+        const btn = el('button', 'btn', t('hud.unload'));
+        btn.title = t('hud.unload_tip');
+        btn.addEventListener('click', () => this.deps.onUnload(u.id));
+        this.selPanel.appendChild(btn);
+      }
     }
   }
 

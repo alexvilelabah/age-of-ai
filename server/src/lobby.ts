@@ -1,7 +1,7 @@
 // Lobby: conexões, salas, chat e transição sala -> partida.
 
 import { MAX_PLAYERS_PER_ROOM, MIN_PLAYERS_TO_START, PLAYER_COLORS } from '@age/shared';
-import type { BotDifficulty, ClientMessage, GameMode, RoomPlayer, RoomSummary, ServerMessage } from '@age/shared';
+import type { BotDifficulty, ClientMessage, GameMode, RoomPlayer, RoomSummary, ServerMessage, TerrainKind } from '@age/shared';
 import { Game, type RoomMember } from './game/room';
 
 export interface Connection {
@@ -33,6 +33,7 @@ interface Room {
   game: Game | null;
   mode: GameMode; // 'normal' | 'batalha' (escolhido pelo host)
   fog: boolean; // névoa de guerra (mapa fechado); default false = mapa aberto
+  terrain: TerrainKind; // 'classic' (lagos) | 'river' (rio + vaus + peixes)
   lastActivity: number; // última ação na sala (Date.now) — p/ fechar sala ociosa
 }
 
@@ -78,6 +79,7 @@ function seededUnit(n: number): number {
 export function generateFakeRooms(nowMs: number, maxPlayers: number): RoomSummary[] {
   const HOUR = 3_600_000;
   const STAGGER = 10 * 60_000; // 10 min entre a troca de uma sala e a seguinte
+  const DRIFT = 4 * 60_000; // a lotação oscila ±1 a cada ~4 min (gente entrando/saindo)
   const GROUP = Math.floor(FAKE_HOST_NAMES.length / 6); // 6 grupos disjuntos de nomes
   const out: RoomSummary[] = [];
   for (let i = 0; i < 6; i++) {
@@ -88,11 +90,17 @@ export function generateFakeRooms(nowMs: number, maxPlayers: number): RoomSummar
     // nome do grupo da vaga (grupos não se cruzam -> nunca repete entre salas),
     // avançando 1 por hora (cicla os do grupo) -> muda toda hora
     const k = i * GROUP + (((bucket + i * 3) % GROUP) + GROUP) % GROUP;
-    const pc = 2 + Math.floor(seededUnit(bucket * 977 + i * 13) * (maxPlayers - 1)); // 2..max
+    // lotação = base da hora + leve DERIVA (±1) a cada ~4 min: dá sensação de sala
+    // viva (gente entra/sai) sem trocar o nome. Sempre 2..max, determinístico no
+    // mesmo instante. O `id` fica preso à HORA -> conta muda, mas é a "mesma sala".
+    const baseCount = 2 + Math.floor(seededUnit(bucket * 977 + i * 13) * (maxPlayers - 1));
+    const driftBucket = Math.floor((nowMs - i * STAGGER) / DRIFT);
+    const drift = Math.floor(seededUnit(driftBucket * 131 + i * 57) * 3) - 1; // -1..+1
+    const pc = Math.max(2, Math.min(maxPlayers, baseCount + drift));
     out.push({
       id: `live-${i}-${bucket}`, // não colide com id real (6 chars maiúsculos)
       hostName: FAKE_HOST_NAMES[k],
-      playerCount: Math.min(pc, maxPlayers),
+      playerCount: pc,
       maxPlayers,
       inGame: true, // "fechado": aparece em andamento, Entrar fica desabilitado
     });
@@ -187,6 +195,9 @@ export class Lobby {
         break;
       case 'setFog':
         this.setFog(conn, msg.fog);
+        break;
+      case 'setTerrain':
+        this.setTerrain(conn, msg.terrain);
         break;
       case 'setBotDifficulty':
         this.setBotDifficulty(conn, msg.botId, msg.difficulty);
@@ -350,6 +361,7 @@ export class Lobby {
       game: null,
       mode: 'normal',
       fog: false, // mapa começa ABERTO (o host fecha se quiser névoa)
+      terrain: 'classic', // padrão: continente clássico; host troca pra Rio
       lastActivity: Date.now(),
     };
     room.members.set(conn.id, { id: conn.id, ready: false, joinOrder: this.joinCounter++ });
@@ -510,6 +522,17 @@ export class Lobby {
     this.broadcastRoomState(room.id);
   }
 
+  /** Host escolhe o terreno (Clássico com lagos, ou Rio com vaus e peixes). */
+  private setTerrain(conn: Connection, terrain: TerrainKind): void {
+    if (!conn.roomId) return;
+    const room = this.rooms.get(conn.roomId);
+    if (!room || room.inGame || room.hostId !== conn.id) return;
+    if (terrain !== 'classic' && terrain !== 'river' && terrain !== 'strait') return;
+    room.terrain = terrain;
+    this.touch(room);
+    this.broadcastRoomState(room.id);
+  }
+
   /** Host muda a dificuldade de um bot da sala (antes de iniciar). */
   private setBotDifficulty(conn: Connection, botId: number, difficulty: BotDifficulty): void {
     if (!conn.roomId) return;
@@ -629,6 +652,7 @@ export class Lobby {
       },
       () => this.onGameOver(room.id),
       room.mode,
+      room.terrain,
     );
     room.game = game;
     room.inGame = true;
@@ -750,7 +774,7 @@ export class Lobby {
         team: m.team,
       };
     });
-    const msg: ServerMessage = { type: 'roomState', roomId, players, mode: room.mode, fog: room.fog };
+    const msg: ServerMessage = { type: 'roomState', roomId, players, mode: room.mode, fog: room.fog, terrain: room.terrain };
     for (const m of room.members.values()) this.conns.get(m.id)?.send(msg);
   }
 }

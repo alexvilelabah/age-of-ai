@@ -39,6 +39,9 @@ const BUILDING_SPRITES: Partial<Record<BuildingType, SpriteFit>> = {
   mill: { file: 'mill.png', scale: 1.3, dropY: 0.28 },
   lumber_camp: { file: 'lumber_camp.png', scale: 1.3, dropY: 0.28 },
   mining_camp: { file: 'mining_camp.png', scale: 1.3, dropY: 0.28 },
+  // PORTO: fica na água (2×2 encostado na costa); a arte é larga (o cais estende
+  // pro lado), então escala um pouco maior. Calibrado por print no jogo.
+  dock: { file: 'dock.png', scale: 1.35, dropY: 0.3 },
   // FAZENDA e MURO ficam PROCEDURAIS (a pedido): a fazenda desenhada por código já
   // estava boa; o muro é tile 1×1 que se repete/conecta em qualquer direção — sprite
   // reto só bateria numa diagonal (precisaria de set direcional + lógica de vizinho).

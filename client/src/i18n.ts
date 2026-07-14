@@ -114,6 +114,17 @@ const PT: Dict = {
   'mini.idle': 'Aldeão ocioso',
   'mini.base': 'Ir pra base',
   'mini.ping': 'Sinalizar pros aliados',
+  'hud.aboard': 'A bordo: {n}/{max}',
+  'hud.unload': 'Desembarcar (U)',
+  'hud.unload_tip': 'Despeja a tropa na costa mais próxima — encoste o barco na margem.',
+  'err.unload_no_shore': 'Encoste o barco na costa pra desembarcar.',
+  'room.terrain': 'Terreno:',
+  'room.terrain_classic': 'Clássico',
+  'room.terrain_classic_desc': 'Continente com lagos (padrão).',
+  'room.terrain_river': 'Rio',
+  'room.terrain_river_desc': 'Um rio cruza o mapa: vaus rasos pra atravessar a pé, peixes pra pescar de barco e o Porto liberado.',
+  'room.terrain_strait': 'Travessia',
+  'room.terrain_strait_desc': 'Rio fundo divide o mapa em duas margens — SEM vaus. A única travessia é de barco (transporte). Foco naval.',
   'err.not_all_ready': 'Nem todos os jogadores estão prontos.',
   'err.bad_json': 'Mensagem inválida (JSON malformado).',
   'err.bad_message': 'Mensagem inválida.',
@@ -289,6 +300,17 @@ const EN: Dict = {
   'mini.idle': 'Idle villager',
   'mini.base': 'Go to Town Center',
   'mini.ping': 'Ping allies',
+  'hud.aboard': 'Aboard: {n}/{max}',
+  'hud.unload': 'Unload (U)',
+  'hud.unload_tip': 'Drops the troops on the nearest shore — bring the ship up to the bank.',
+  'err.unload_no_shore': 'Bring the ship to the shore to unload.',
+  'room.terrain': 'Terrain:',
+  'room.terrain_classic': 'Classic',
+  'room.terrain_classic_desc': 'Mainland with lakes (default).',
+  'room.terrain_river': 'River',
+  'room.terrain_river_desc': 'A river crosses the map: shallow fords to walk across, fish to catch by boat, and the Dock unlocked.',
+  'room.terrain_strait': 'Crossing',
+  'room.terrain_strait_desc': 'A deep river splits the map in two — NO fords. The only way across is by boat (transport). Naval focus.',
   'err.not_all_ready': 'Not all players are ready.',
   'err.bad_json': 'Invalid message (malformed JSON).',
   'err.bad_message': 'Invalid message.',
@@ -460,6 +482,17 @@ const ES: Dict = {
   'mini.idle': 'Aldeano ocioso',
   'mini.base': 'Ir a la base',
   'mini.ping': 'Señalar a los aliados',
+  'hud.aboard': 'A bordo: {n}/{max}',
+  'hud.unload': 'Desembarcar (U)',
+  'hud.unload_tip': 'Deja las tropas en la costa más cercana — acerca el barco a la orilla.',
+  'err.unload_no_shore': 'Acerca el barco a la costa para desembarcar.',
+  'room.terrain': 'Terreno:',
+  'room.terrain_classic': 'Clásico',
+  'room.terrain_classic_desc': 'Continente con lagos (predeterminado).',
+  'room.terrain_river': 'Río',
+  'room.terrain_river_desc': 'Un río cruza el mapa: vados para cruzar a pie, peces para pescar en barco y el Puerto desbloqueado.',
+  'room.terrain_strait': 'Travesía',
+  'room.terrain_strait_desc': 'Un río profundo divide el mapa en dos — SIN vados. La única forma de cruzar es en barco (transporte). Enfoque naval.',
   'err.not_all_ready': 'No todos los jugadores están listos.',
   'err.bad_json': 'Mensaje inválido (JSON mal formado).',
   'err.bad_message': 'Mensaje inválido.',
@@ -561,9 +594,9 @@ export function t(key: string, params?: Record<string, string | number>): string
 // ---------------------------------------------------------- conteúdo (nomes)
 
 const UNIT_NAMES_ALL: Record<Lang, Record<UnitType, string>> = {
-  pt: { villager: 'Aldeão', swordsman: 'Espadachim', archer: 'Arqueiro', knight: 'Cavaleiro' },
-  en: { villager: 'Villager', swordsman: 'Swordsman', archer: 'Archer', knight: 'Knight' },
-  es: { villager: 'Aldeano', swordsman: 'Espadachín', archer: 'Arquero', knight: 'Caballero' },
+  pt: { villager: 'Aldeão', swordsman: 'Espadachim', archer: 'Arqueiro', knight: 'Cavaleiro', fishing_boat: 'Barco de Pesca', war_galley: 'Galé de Guerra', transport: 'Transporte' },
+  en: { villager: 'Villager', swordsman: 'Swordsman', archer: 'Archer', knight: 'Knight', fishing_boat: 'Fishing Boat', war_galley: 'War Galley', transport: 'Transport Ship' },
+  es: { villager: 'Aldeano', swordsman: 'Espadachín', archer: 'Arquero', knight: 'Caballero', fishing_boat: 'Barco Pesquero', war_galley: 'Galera de Guerra', transport: 'Transporte' },
 };
 
 const BUILDING_NAMES_ALL: Record<Lang, Record<BuildingType, string>> = {
@@ -571,26 +604,26 @@ const BUILDING_NAMES_ALL: Record<Lang, Record<BuildingType, string>> = {
     town_center: 'Centro da Cidade', house: 'Casa', barracks: 'Quartel', farm: 'Fazenda',
     archery_range: 'Arquearia', stable: 'Estábulo', blacksmith: 'Ferraria', market: 'Mercado',
     wall: 'Muralha', watch_tower: 'Torre de Vigia', mill: 'Moinho', lumber_camp: 'Madeireira',
-    mining_camp: 'Campo de Mineração',
+    mining_camp: 'Campo de Mineração', dock: 'Porto',
   },
   en: {
     town_center: 'Town Center', house: 'House', barracks: 'Barracks', farm: 'Farm',
     archery_range: 'Archery Range', stable: 'Stable', blacksmith: 'Blacksmith', market: 'Market',
     wall: 'Wall', watch_tower: 'Watch Tower', mill: 'Mill', lumber_camp: 'Lumber Camp',
-    mining_camp: 'Mining Camp',
+    mining_camp: 'Mining Camp', dock: 'Dock',
   },
   es: {
     town_center: 'Centro Urbano', house: 'Casa', barracks: 'Cuartel', farm: 'Granja',
     archery_range: 'Galería de Tiro', stable: 'Establo', blacksmith: 'Herrería', market: 'Mercado',
     wall: 'Muralla', watch_tower: 'Torre de Vigía', mill: 'Molino', lumber_camp: 'Campamento Maderero',
-    mining_camp: 'Campamento Minero',
+    mining_camp: 'Campamento Minero', dock: 'Puerto',
   },
 };
 
 const NODE_NAMES_ALL: Record<Lang, Record<NodeType, string>> = {
-  pt: { tree: 'Árvore', berry_bush: 'Arbusto de frutas', gold_mine: 'Mina de ouro', stone_mine: 'Mina de pedra' },
-  en: { tree: 'Tree', berry_bush: 'Berry Bush', gold_mine: 'Gold Mine', stone_mine: 'Stone Mine' },
-  es: { tree: 'Árbol', berry_bush: 'Arbusto de bayas', gold_mine: 'Mina de oro', stone_mine: 'Mina de piedra' },
+  pt: { tree: 'Árvore', berry_bush: 'Arbusto de frutas', gold_mine: 'Mina de ouro', stone_mine: 'Mina de pedra', fish: 'Banco de peixes' },
+  en: { tree: 'Tree', berry_bush: 'Berry Bush', gold_mine: 'Gold Mine', stone_mine: 'Stone Mine', fish: 'Fish School' },
+  es: { tree: 'Árbol', berry_bush: 'Arbusto de bayas', gold_mine: 'Mina de oro', stone_mine: 'Mina de piedra', fish: 'Banco de peces' },
 };
 
 const RESOURCE_NAMES_ALL: Record<Lang, Record<ResourceType, string>> = {
@@ -614,6 +647,7 @@ const BUILDING_DESCS_ALL: Record<Lang, Record<BuildingType, string>> = {
     mill: 'Depósito de COMIDA. Libera a Fazenda e o Mercado. Construa perto da comida.',
     lumber_camp: 'Depósito de MADEIRA. Construa junto à floresta pra encurtar a viagem dos lenhadores.',
     mining_camp: 'Depósito de OURO e PEDRA. Construa ao lado das minas.',
+    dock: 'Construído NA ÁGUA, encostado na costa. Deposita o peixe e treina os barcos (pesca, guerra e transporte).',
   },
   en: {
     town_center: 'The heart of your town: trains villagers, receives gathered resources, and researches the next age.',
@@ -629,6 +663,7 @@ const BUILDING_DESCS_ALL: Record<Lang, Record<BuildingType, string>> = {
     mill: 'FOOD drop-off. Unlocks the Farm and the Market. Build it near food.',
     lumber_camp: "WOOD drop-off. Build it by the forest to shorten your lumberjacks' trips.",
     mining_camp: 'GOLD and STONE drop-off. Build it next to the mines.',
+    dock: 'Built ON the water, hugging the shore. Receives fish and trains ships (fishing, war, and transport).',
   },
   es: {
     town_center: 'El corazón de tu aldea: entrena aldeanos, recibe los recursos recolectados e investiga el avance de edad.',
@@ -644,6 +679,7 @@ const BUILDING_DESCS_ALL: Record<Lang, Record<BuildingType, string>> = {
     mill: 'Depósito de COMIDA. Habilita la Granja y el Mercado. Constrúyelo cerca de la comida.',
     lumber_camp: 'Depósito de MADERA. Constrúyelo junto al bosque para acortar el viaje de los leñadores.',
     mining_camp: 'Depósito de ORO y PIEDRA. Constrúyelo junto a las minas.',
+    dock: 'Se construye EN el agua, pegado a la costa. Recibe el pescado y entrena los barcos (pesca, guerra y transporte).',
   },
 };
 
@@ -653,18 +689,27 @@ const UNIT_DESCS_ALL: Record<Lang, Record<UnitType, string>> = {
     swordsman: 'Infantaria corpo a corpo, equilibrada e barata.',
     archer: 'Ataca de longe, mas é frágil de perto — proteja-o.',
     knight: 'Cavalaria veloz com muito dano e vida; cara de treinar.',
+    fishing_boat: 'Pesca os bancos de peixe e entrega no Porto — comida farta e constante.',
+    war_galley: 'Navio de guerra: flechas de longe, forte contra barcos e a costa.',
+    transport: 'Leva até 5 unidades terrestres pelo rio. Encoste na costa e Desembarque.',
   },
   en: {
     villager: 'Gathers resources, builds, and repairs — the backbone of your economy.',
     swordsman: 'Melee infantry — balanced and cheap.',
     archer: 'Attacks from afar but is fragile up close — protect it.',
     knight: 'Fast cavalry with high damage and HP; expensive to train.',
+    fishing_boat: 'Fishes the schools and delivers to the Dock — steady, plentiful food.',
+    war_galley: 'Warship: long-range arrows, strong against ships and the shoreline.',
+    transport: 'Carries up to 5 land units across the water. Hug the shore and Unload.',
   },
   es: {
     villager: 'Recolecta recursos, construye y repara — la base de tu economía.',
     swordsman: 'Infantería cuerpo a cuerpo, equilibrada y barata.',
     archer: 'Ataca de lejos, pero es frágil de cerca — protégelo.',
     knight: 'Caballería veloz con mucho daño y vida; cara de entrenar.',
+    fishing_boat: 'Pesca los bancos de peces y entrega en el Puerto — comida abundante.',
+    war_galley: 'Barco de guerra: flechas de lejos, fuerte contra barcos y la costa.',
+    transport: 'Lleva hasta 5 unidades terrestres por el agua. Acércate a la costa y Desembarca.',
   },
 };
 
@@ -750,6 +795,9 @@ export const UNIT_ICONS: Record<UnitType, string> = {
   swordsman: '⚔️',
   archer: '🏹',
   knight: '🏇',
+  fishing_boat: '🎣',
+  war_galley: '⛵',
+  transport: '🛶',
 };
 
 export const BUILDING_ICONS: Record<BuildingType, string> = {
@@ -766,6 +814,7 @@ export const BUILDING_ICONS: Record<BuildingType, string> = {
   mill: '🍞',
   lumber_camp: '🪓',
   mining_camp: '⛏️',
+  dock: '⚓',
 };
 
 export const NODE_ICONS: Record<NodeType, string> = {
@@ -773,6 +822,7 @@ export const NODE_ICONS: Record<NodeType, string> = {
   berry_bush: '🍓',
   gold_mine: '⛏️',
   stone_mine: '⛰️',
+  fish: '🐟',
 };
 
 /** Ícone do recurso produzido por um nó. */

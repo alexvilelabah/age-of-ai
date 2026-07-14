@@ -17,6 +17,8 @@ export const SNAPSHOT_TICKS = 2; // snapshot completo a cada N ticks (5/s)
 export const MAP_SIZE = 144; // MAP_SIZE x MAP_SIZE tiles
 export const TILE_GRASS = 0;
 export const TILE_WATER = 1;
+// Raso (vau): a travessia a pé do mapa Rio — passável por unidades E barcos.
+export const TILE_SHALLOW = 2;
 
 // ---------- Partida ----------
 export const MAX_PLAYERS_PER_ROOM = 4;
@@ -53,6 +55,10 @@ export const UNIT_DEFS: Record<UnitType, UnitDef> = {
   swordsman: { hp: 60,  speed: 1.8, attack: 9,  range: 1,   attackCooldown: 1.2, sight: 5, cost: { food: 60, gold: 20 }, trainTime: 10, pop: 1 },
   archer:    { hp: 35,  speed: 1.9, attack: 6,  range: 4.5, attackCooldown: 1.5, sight: 6, cost: { wood: 40, gold: 30 }, trainTime: 10, pop: 1 },
   knight:    { hp: 100, speed: 2.6, attack: 14, range: 1,   attackCooldown: 1.2, sight: 6, cost: { food: 70, gold: 50 }, trainTime: 16, pop: 1 },
+  // ---- Navais (só água; treinadas no Porto) ----
+  fishing_boat: { hp: 60,  speed: 2.2, attack: 0,  range: 0,   attackCooldown: 1,   sight: 6, cost: { wood: 60 },            trainTime: 10, pop: 1 },
+  war_galley:   { hp: 130, speed: 2.4, attack: 8,  range: 5.5, attackCooldown: 1.6, sight: 7, cost: { wood: 90, gold: 30 },  trainTime: 14, pop: 2 },
+  transport:    { hp: 110, speed: 2.6, attack: 0,  range: 0,   attackCooldown: 1,   sight: 6, cost: { wood: 80 },            trainTime: 12, pop: 1 },
 };
 
 // ---------- Prédios ----------
@@ -86,7 +92,20 @@ export const BUILDING_DEFS: Record<BuildingType, BuildingDef> = {
   mill:          { hp: 250,  size: 2, cost: { wood: 100 },             buildTime: 15, popProvided: 0, trains: [],              isDropOff: true,  ageReq: 1, accepts: ['food'] },
   lumber_camp:   { hp: 250,  size: 2, cost: { wood: 100 },             buildTime: 15, popProvided: 0, trains: [],              isDropOff: true,  ageReq: 1, accepts: ['wood'] },
   mining_camp:   { hp: 250,  size: 2, cost: { wood: 100 },             buildTime: 15, popProvided: 0, trains: [],              isDropOff: true,  ageReq: 1, accepts: ['gold', 'stone'] },
+  // Porto: construído NA ÁGUA encostado na costa; deposita o peixe e treina barcos.
+  dock:          { hp: 600,  size: 2, cost: { wood: 150 },             buildTime: 20, popProvided: 0, trains: ['fishing_boat', 'war_galley', 'transport'], isDropOff: true, ageReq: 1, accepts: ['food'] },
 };
+
+// ---------- Naval ----------
+/** Unidades que andam SÓ na água (água funda ou raso). */
+export const NAVAL_UNITS: ReadonlySet<UnitType> = new Set(['fishing_boat', 'war_galley', 'transport']);
+export const isNavalUnit = (t: UnitType): boolean => NAVAL_UNITS.has(t);
+/** Capacidade do barco de transporte (unidades terrestres embarcadas). */
+export const TRANSPORT_CAP = 5;
+/** Quanto o barco de pesca carrega antes de entregar no Porto. */
+export const FISH_BOAT_CARRY = 15;
+/** Raio mínimo entre barcos (empurra-afasta suave — não ficam colados). */
+export const BOAT_SEPARATION = 0.9;
 
 // ---------- Visão (névoa de guerra, só apresentação no cliente) ----------
 // Raios em tiles, medidos do CENTRO da fonte. Unidades usam o `sight` delas.
@@ -94,6 +113,7 @@ export const BUILDING_VISION_DEFAULT = 6;
 export const BUILDING_VISION: Partial<Record<BuildingType, number>> = {
   town_center: 9,
   watch_tower: 9,
+  dock: 7,
 };
 export const SHEEP_VISION = 3;
 
@@ -185,6 +205,9 @@ export const UNIT_AGE_REQ: Record<UnitType, number> = {
   swordsman: 1,
   archer: 2,
   knight: 3,
+  fishing_boat: 1,
+  war_galley: 2, // barco de guerra a partir da Idade Feudal (estilo AoE)
+  transport: 1,  // travessia cedo: o rio não pode trancar o mapa na Idade das Trevas
 };
 
 // ---------- Tecnologias / upgrades (pesquisados nos prédios) ----------
@@ -328,6 +351,8 @@ export const NODE_DEFS: Record<NodeType, NodeDef> = {
   berry_bush: { resource: 'food',  amount: 200 },
   gold_mine:  { resource: 'gold',  amount: 650 },
   stone_mine: { resource: 'stone', amount: 550 },
+  // Banco de peixes (só no mapa Rio): MUITA comida — pesca longa, estilo AoE.
+  fish:       { resource: 'food',  amount: 450 },
 };
 
 // ---------- Ovelhas (comida do início, estilo AoE) ----------

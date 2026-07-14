@@ -81,6 +81,7 @@ export class GameScreen {
       onTrade: (action, resource) => this.deps.onCommand({ kind: 'trade', action, resource }),
       onChat: (text) => this.deps.onChat(text),
       onIdleVillager: () => this.selectNextIdleVillager(),
+      onUnload: (transportId) => this.deps.onCommand({ kind: 'unload', buildingId: transportId }),
       getPlacement: () => this.input.ui.placement,
     };
     this.createHud();

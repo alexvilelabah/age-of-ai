@@ -6,7 +6,12 @@
 //    (um id nunca se repete entre categorias — comandos usam targetId genérico).
 
 export type ResourceType = 'food' | 'wood' | 'gold' | 'stone';
-export type UnitType = 'villager' | 'swordsman' | 'archer' | 'knight';
+export type UnitType =
+  | 'villager' | 'swordsman' | 'archer' | 'knight'
+  // Navais (andam SÓ na água; treinadas no Porto):
+  | 'fishing_boat' // pesca bancos de peixe e entrega no Porto
+  | 'war_galley'   // barco de guerra (ataque à distância)
+  | 'transport';   // leva unidades terrestres pelo rio (embarcar/desembarcar)
 export type BuildingType =
   | 'town_center'
   | 'house'
@@ -20,8 +25,9 @@ export type BuildingType =
   | 'watch_tower'
   | 'mill'          // depósito de comida
   | 'lumber_camp'   // depósito de madeira
-  | 'mining_camp';  // depósito de ouro e pedra
-export type NodeType = 'tree' | 'berry_bush' | 'gold_mine' | 'stone_mine';
+  | 'mining_camp'   // depósito de ouro e pedra
+  | 'dock';         // Porto: NA água (costa); deposita peixe e treina barcos
+export type NodeType = 'tree' | 'berry_bush' | 'gold_mine' | 'stone_mine' | 'fish';
 
 export type Resources = Record<ResourceType, number>;
 
@@ -48,6 +54,8 @@ export interface UnitSnap {
   carryType?: ResourceType;
   carryAmount?: number;
   targetId?: number;
+  /** Barco de transporte: quantas unidades estão embarcadas. */
+  garrison?: number;
 }
 
 // progress 0..1 — apenas o primeiro item da fila avança

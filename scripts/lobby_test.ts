@@ -36,7 +36,8 @@ check('após A sair, B pode usar "alex"', b.name === 'alex' && sent(outB, 'nameO
 
 // a lista de salas mostra o NOME do host
 g.handleMessage(b.id, { type: 'createRoom' });
-const sums = g.roomSummaries();
+// roomSummaries() inclui as salas-vitrine (ids "live-"); filtra só as REAIS.
+const sums = g.roomSummaries().filter((s) => !s.id.startsWith('live-'));
 check('sala tem hostName = "alex"', sums.length === 1 && sums[0].hostName === 'alex');
 check('sala ainda tem um id interno', typeof sums[0].id === 'string' && sums[0].id.length > 0);
 

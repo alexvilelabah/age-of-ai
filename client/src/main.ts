@@ -119,6 +119,7 @@ const roomScreen = new RoomScreen({
   onSetTeam: (playerId, team) => net.send({ type: 'setTeam', playerId, team }),
   onSetMode: (mode) => net.send({ type: 'setMode', mode }),
   onSetFog: (fog) => net.send({ type: 'setFog', fog }),
+  onSetTerrain: (terrain) => net.send({ type: 'setTerrain', terrain }),
   onSetBotDifficulty: (botId, difficulty) => net.send({ type: 'setBotDifficulty', botId, difficulty }),
 });
 
@@ -144,6 +145,13 @@ function showScreen(name: ScreenName): void {
 document.addEventListener('pointerdown', () => music.unlock(), { once: true });
 music.setVolume(settings.musicVol); // volume salvo no menu de opções
 music.setState('menu');
+
+// Lobby "vivo": re-pede a lista a cada 20s enquanto o jogador está no lobby, pra
+// refletir as salas-vitrine (nome gira a cada 10 min, lotação oscila) e as salas
+// reais entrando/saindo. Sem isso a lista congela até clicar "Atualizar".
+window.setInterval(() => {
+  if (current === 'lobby' && net.isOpen) net.send({ type: 'listRooms' });
+}, 20_000);
 
 // ---------------------------------------------------------------- rede
 
@@ -200,7 +208,7 @@ function dispatch(msg: ServerMessage): void {
     }
     case 'roomState': {
       lastRoomPlayers = Array.isArray(msg.players) ? msg.players : [];
-      roomScreen.setState(msg.roomId, lastRoomPlayers, myPlayerId, msg.mode, msg.fog);
+      roomScreen.setState(msg.roomId, lastRoomPlayers, myPlayerId, msg.mode, msg.fog, msg.terrain);
       // Ignora troca de tela enquanto o overlay de fim de jogo está visível: o
       // servidor manda 'roomState' logo após 'gameOver' (reset do lobby), mas o
       // jogador ainda não confirmou "Voltar ao lobby" — trocar de tela agora

@@ -4,7 +4,7 @@
 // substituídos por arte dedicada nas próximas etapas.
 
 import type { BuildingSnap, BuildingType, NodeSnap, NodeType, ResourceType, SheepSnap, UnitSnap } from '@age/shared';
-import { BUILDING_DEFS, DEFENSE_DEFS, SHEEP_FOOD, TILE_WATER, UNIT_DEFS, techBonus } from '@age/shared';
+import { BUILDING_DEFS, DEFENSE_DEFS, SHEEP_FOOD, TILE_SHALLOW, TILE_WATER, UNIT_DEFS, isNavalUnit, techBonus } from '@age/shared';
 import type { GameState } from '../state';
 import type { Camera } from './camera';
 import { ISO_HH, ISO_HW } from './camera';
@@ -25,6 +25,7 @@ export const MINIMAP_NODE_COLORS: Record<NodeType, string> = {
   berry_bush: '#c9414d',
   gold_mine: '#ecc73e',
   stone_mine: '#a8adb4',
+  fish: '#bfe3f2', // prateado-azulado: salta na água escura do minimapa
 };
 
 /** Materiais por era (1=Trevas, 2=Feudal, 3=Castelos, 4=Imperial). Cada era não
@@ -218,35 +219,33 @@ export class Renderer {
         if (v === TILE_WATER) {
           // água lisa (como antes), com o ruído deslizando bem devagar no tempo
           // pra "mexer" de leve — sem virar quadradinhos nem gradiente por tile.
+          // Azul mais PROFUNDO/escuro (pedido do usuário).
           const t = now * 0.00018;
           const wn = vnoise(tx / 4.5 + 3 + t, ty / 4.5 + 9 - t * 0.6);
-          ctx.fillStyle = `hsl(202, 46%, ${41 + wn * 9}%)`;
+          ctx.fillStyle = `hsl(206, 52%, ${33 + wn * 8}%)`;
+        } else if (v === TILE_SHALLOW) {
+          // VAU = BANCO DE AREIA atravessando o rio (travessia a pé; barco não
+          // passa). Areia com ruído suave; a borda ondulada com a água funda
+          // vem da drawCoast (o vau conta como "terra" pra ela).
+          const sn = vnoise(tx / 3.5 + 33, ty / 3.5 + 33);
+          ctx.fillStyle = `hsl(43, 31%, ${60 + sn * 6}%)`;
         } else {
-          // grama adjacente à água vira areia (praia de 1 tile em volta do lago)
-          const beach =
-            isWater(tx + 1, ty) || isWater(tx - 1, ty) || isWater(tx, ty + 1) || isWater(tx, ty - 1) ||
-            isWater(tx + 1, ty + 1) || isWater(tx - 1, ty - 1) || isWater(tx + 1, ty - 1) || isWater(tx - 1, ty + 1);
-          if (beach) {
-            const sn = vnoise(tx / 3 + 20, ty / 3 + 20);
-            // areia molhada (encostando na água, 4-dir) mais escura que a seca
-            const wet = isWater(tx + 1, ty) || isWater(tx - 1, ty) || isWater(tx, ty + 1) || isWater(tx, ty - 1);
-            ctx.fillStyle = wet ? `hsl(41, 40%, ${46 + sn * 6}%)` : `hsl(45, 42%, ${63 + sn * 7}%)`;
-          } else {
-            // cor por ruído suave (varia devagar) => sem xadrez, sem bordas
-            const n = vnoise(tx / 6.5, ty / 6.5);
-            const n2 = vnoise(tx / 2.4 + 11, ty / 2.4 + 7);
-            // bioma em escala LARGA (transição gradual, nunca por tile):
-            // capim seco/amarelado numa região, verde exuberante noutra
-            const bio = vnoise(tx / 24 + 71, ty / 24 + 71);
-            const dryT = clamp01((0.42 - bio) * 2.4);
-            const lushT = clamp01((bio - 0.62) * 2.6);
-            ctx.fillStyle = `hsl(${95 + (n - 0.5) * 8 - dryT * 16 + lushT * 7}, ${33 - dryT * 7 + lushT * 5}%, ${30 + n * 7 + (n2 - 0.5) * 2.5 + dryT * 5 - lushT * 1.5}%)`;
-            // manchas de terra batida (noise de baixa freq., borda suave)
-            const dn = vnoise(tx / 8.5 + 40, ty / 8.5 + 40);
-            if (dn > 0.66) dirtT = Math.min(0.72, ((dn - 0.66) / 0.2) * 0.72);
-            // chão de floresta: terra escura e folhas sob as árvores
-            forestT = forest[ty * size + tx];
-          }
+          // TERRA: sem pintar areia por tile (era o que deixava a borda "quadrada"
+          // e grossa). A praia fica SÓ na franja ondulada da drawCoast, na beira
+          // d'água — waterline limpa. A grama vai reto até a margem.
+          const n = vnoise(tx / 6.5, ty / 6.5);
+          const n2 = vnoise(tx / 2.4 + 11, ty / 2.4 + 7);
+          // bioma em escala LARGA (transição gradual, nunca por tile):
+          // capim seco/amarelado numa região, verde exuberante noutra
+          const bio = vnoise(tx / 24 + 71, ty / 24 + 71);
+          const dryT = clamp01((0.42 - bio) * 2.4);
+          const lushT = clamp01((bio - 0.62) * 2.6);
+          ctx.fillStyle = `hsl(${95 + (n - 0.5) * 8 - dryT * 16 + lushT * 7}, ${33 - dryT * 7 + lushT * 5}%, ${30 + n * 7 + (n2 - 0.5) * 2.5 + dryT * 5 - lushT * 1.5}%)`;
+          // manchas de terra batida (noise de baixa freq., borda suave)
+          const dn = vnoise(tx / 8.5 + 40, ty / 8.5 + 40);
+          if (dn > 0.66) dirtT = Math.min(0.72, ((dn - 0.66) / 0.2) * 0.72);
+          // chão de floresta: terra escura e folhas sob as árvores
+          forestT = forest[ty * size + tx];
         }
         ctx.fill();
         if (dirtT > 0) {
@@ -467,22 +466,23 @@ export class Renderer {
     for (let ty = ty0; ty <= ty1; ty++) {
       for (let tx = tx0; tx <= tx1; tx++) {
         if (isWater(tx, ty)) continue;
-        // sedimento de areia na água rasa (quente e translúcido — não é espuma)
-        ctx.fillStyle = 'rgba(196,174,120,0.17)';
+        // sedimento de areia na água rasa (quente e translúcido — não é espuma).
+        // Franja MAIS FINA (base 0.4) e clarinha, pra borda enxuta.
+        ctx.fillStyle = 'rgba(210,192,140,0.14)';
         for (const [dx, dy, ca, cb] of edges) {
-          if (isWater(tx + dx, ty + dy)) band(tx, ty, dx, dy, ca, cb, 0.55, 0.5);
+          if (isWater(tx + dx, ty + dy)) band(tx, ty, dx, dy, ca, cb, 0.4, 0.42);
         }
       }
     }
-    // 2ª passada: areia molhada opaca (mais rasa) — quebra o ziguezague reto.
+    // 2ª passada: areia clara opaca (bem rasa) — quebra o ziguezague reto.
     for (let ty = ty0; ty <= ty1; ty++) {
       for (let tx = tx0; tx <= tx1; tx++) {
         if (isWater(tx, ty)) continue;
         for (const [dx, dy, ca, cb] of edges) {
           if (!isWater(tx + dx, ty + dy)) continue;
           const mn = vnoise((tx + 0.5) * 1.3 + 8, (ty + 0.5) * 1.3 + 8);
-          ctx.fillStyle = `hsl(42, 39%, ${46 + (mn - 0.5) * 9}%)`;
-          band(tx, ty, dx, dy, ca, cb, 0.3, 0.5);
+          ctx.fillStyle = `hsl(43, 30%, ${58 + (mn - 0.5) * 8}%)`;
+          band(tx, ty, dx, dy, ca, cb, 0.22, 0.42);
         }
       }
     }
@@ -781,6 +781,56 @@ export class Renderer {
       this.mineCluster(ctx, sx, sy, U, n.tileX, n.tileY, 'gold');
     } else if (n.type === 'stone_mine') {
       this.mineCluster(ctx, sx, sy, U, n.tileX, n.tileY, 'stone');
+    } else if (n.type === 'fish') {
+      this.drawFishSchool(ctx, sx, sy, U, n.tileX, n.tileY, now);
+    }
+  }
+
+  /** Banco de peixes: ondulações + peixinhos prateados SALTANDO em arco, em
+   *  sequência dessincronizada (determinística por tile — não pisca). */
+  private drawFishSchool(
+    ctx: CanvasRenderingContext2D,
+    sx: number, sy: number, U: number,
+    tx: number, ty: number, now: number,
+  ): void {
+    // ondulações concêntricas suaves (2 anéis defasados)
+    for (let r = 0; r < 2; r++) {
+      const ph = ((now * 0.00045 + hash01(tx + r * 7, ty) * 0.9 + r * 0.5) % 1);
+      ctx.strokeStyle = `rgba(225,240,248,${0.4 * (1 - ph)})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, U * (0.35 + ph * 1.15), U * (0.16 + ph * 0.5), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // sombra do cardume sob a água
+    this.blob(ctx, sx, sy + U * 0.05, U * 0.55, U * 0.22, 'rgba(20,48,66,0.35)');
+    // 3 peixes saltando em arco, cada um com fase própria
+    for (let i = 0; i < 3; i++) {
+      const ph = ((now * 0.0006 + hash01(tx * 3 + i * 11, ty * 5 + i) * 1.0 + i * 0.33) % 1);
+      if (ph > 0.42) continue; // a maior parte do tempo embaixo d'água
+      const k = ph / 0.42; // 0..1 do salto
+      const dir = hash01(tx + i, ty + i * 3) < 0.5 ? 1 : -1;
+      const jx = sx + (k - 0.5) * U * 1.1 * dir + (i - 1) * U * 0.3;
+      const jy = sy - Math.sin(k * Math.PI) * U * 0.72 + (i - 1) * U * 0.08;
+      const tilt = (k - 0.5) * 1.6 * dir;
+      ctx.save();
+      ctx.translate(jx, jy);
+      ctx.rotate(tilt);
+      // corpinho prateado com dorso escuro + rabinho
+      this.blob(ctx, 0, 0, U * 0.2, U * 0.075, '#d8e8f0', '#9fb6c2');
+      this.blob(ctx, 0, -U * 0.028, U * 0.16, U * 0.03, '#5e7889');
+      ctx.fillStyle = '#c2d6e0';
+      ctx.beginPath();
+      ctx.moveTo(-U * 0.19 * 1, 0);
+      ctx.lineTo(-U * 0.3, -U * 0.07);
+      ctx.lineTo(-U * 0.3, U * 0.07);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      // respingo na entrada/saída
+      if (k < 0.18 || k > 0.85) {
+        this.blob(ctx, jx, sy + U * 0.04, U * 0.12, U * 0.05, 'rgba(235,246,252,0.7)');
+      }
     }
   }
 
@@ -1820,6 +1870,97 @@ export class Renderer {
   }
 
   /** Madeireira (depósito de madeira): alpendre aberto de madeira + pilha de TORAS empilhadas. */
+  /** Porto: cais de TÁBUAS sobre estacas fincadas na água, casinhola de palha
+   *  no fundo, poste de amarração com corda e a bandeira do dono. */
+  private drawDock(ctx: CanvasRenderingContext2D, st: BSite): number {
+    const { T, R, B, L, th, hh, m, owner, under, prog, now } = st;
+    const deckH = Math.max(3, th * 0.22) * prog; // deck baixo, rente à água
+    // espuma da água lambendo as estacas (anima devagar)
+    const foamPh = (now * 0.0012) % 1;
+    ctx.strokeStyle = `rgba(226,242,248,${0.35 + 0.2 * Math.sin(foamPh * Math.PI * 2)})`;
+    ctx.lineWidth = Math.max(1, hh * 0.1);
+    ctx.beginPath();
+    ctx.moveTo(L.x, L.y + hh * 0.08);
+    ctx.quadraticCurveTo(B.x, B.y + hh * 0.22, R.x, R.y + hh * 0.08);
+    ctx.stroke();
+    // ESTACAS (postes) fincadas na água nos cantos e no meio das arestas de frente
+    const stake = (p: Pt, tall: number): void => {
+      ctx.strokeStyle = shadeHex(m.wood, -0.35);
+      ctx.lineWidth = Math.max(2, hh * 0.16);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y + hh * 0.18); // entra na água
+      ctx.lineTo(p.x, p.y - tall);
+      ctx.stroke();
+    };
+    stake(L, deckH + hh * 0.28);
+    stake(B, deckH + hh * 0.34);
+    stake(R, deckH + hh * 0.28);
+    stake({ x: (L.x + B.x) / 2, y: (L.y + B.y) / 2 }, deckH + hh * 0.2);
+    stake({ x: (B.x + R.x) / 2, y: (B.y + R.y) / 2 }, deckH + hh * 0.2);
+    // DECK de tábuas (plataforma elevada sobre o footprint)
+    const T2 = { x: T.x, y: T.y - deckH };
+    const R2 = { x: R.x, y: R.y - deckH };
+    const B2 = { x: B.x, y: B.y - deckH };
+    const L2 = { x: L.x, y: L.y - deckH };
+    // borda frontal (espessura do deck)
+    this.poly(ctx, [L2, B2, { x: B.x, y: B.y - deckH + hh * 0.16 }, { x: L.x, y: L.y - deckH + hh * 0.16 }], shadeHex(m.wood, -0.3));
+    this.poly(ctx, [B2, R2, { x: R.x, y: R.y - deckH + hh * 0.16 }, { x: B.x, y: B.y - deckH + hh * 0.16 }], shadeHex(m.wood, -0.38));
+    this.poly(ctx, [T2, R2, B2, L2], shadeHex(m.wood, 0.28), shadeHex(m.wood, -0.3));
+    // tábuas: linhas paralelas à aresta T->R
+    ctx.strokeStyle = 'rgba(64,44,22,0.45)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 6; i++) {
+      const k = i / 6;
+      ctx.beginPath();
+      ctx.moveTo(T2.x + (L2.x - T2.x) * k, T2.y + (L2.y - T2.y) * k);
+      ctx.lineTo(R2.x + (B2.x - R2.x) * k, R2.y + (B2.y - R2.y) * k);
+      ctx.stroke();
+    }
+    // CASINHOLA no fundo (metade de trás do deck): paredes + telhado de palha
+    const hutT = { x: T2.x, y: T2.y };
+    const hutR = { x: (T2.x + R2.x) / 2, y: (T2.y + R2.y) / 2 };
+    const hutB = { x: (T2.x + B2.x) / 2, y: (T2.y + B2.y) / 2 };
+    const hutL = { x: (T2.x + L2.x) / 2, y: (T2.y + L2.y) / 2 };
+    const wallH = th * 0.34 * prog;
+    const w2 = {
+      T2: { x: hutT.x, y: hutT.y - wallH },
+      R2: { x: hutR.x, y: hutR.y - wallH },
+      B2: { x: hutB.x, y: hutB.y - wallH },
+      L2: { x: hutL.x, y: hutL.y - wallH },
+    };
+    this.poly(ctx, [hutL, hutB, { x: hutB.x, y: w2.B2.y }, { x: hutL.x, y: w2.L2.y }], shadeHex(m.wood, 0.05));
+    this.poly(ctx, [hutB, hutR, { x: hutR.x, y: w2.R2.y }, { x: hutB.x, y: w2.B2.y }], shadeHex(m.wood, -0.12));
+    const roofH = hh * 0.85;
+    this.gableRoof(ctx, w2, roofH, m.thatch, true); // telhadinho de palha
+    if (!under) {
+      // poste de amarração com corda caída na água + caixa de peixe no deck
+      const mx = (B2.x + R2.x) / 2 + hh * 0.2;
+      const my = (B2.y + R2.y) / 2;
+      ctx.strokeStyle = shadeHex(m.wood, -0.3);
+      ctx.lineWidth = Math.max(2, hh * 0.14);
+      ctx.beginPath();
+      ctx.moveTo(mx, my);
+      ctx.lineTo(mx, my - hh * 0.55);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(214,196,150,0.9)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(mx, my - hh * 0.4);
+      ctx.quadraticCurveTo(mx + hh * 0.5, my + hh * 0.1, mx + hh * 0.35, my + hh * 0.45);
+      ctx.stroke();
+      // caixote com peixes prateados
+      const cx2 = (L2.x + B2.x) / 2;
+      const cy2 = (L2.y + B2.y) / 2 - hh * 0.12;
+      this.block(ctx, cx2, cy2, hh * 0.5, hh * 0.3, shadeHex(m.wood, -0.05));
+      this.blob(ctx, cx2 - hh * 0.08, cy2 - hh * 0.16, hh * 0.16, hh * 0.06, '#cfe0ea');
+      this.blob(ctx, cx2 + hh * 0.1, cy2 - hh * 0.13, hh * 0.14, hh * 0.05, '#dbe9f1');
+    }
+    const peak = this.ridgeTop(w2, roofH);
+    if (!under) this.banner(ctx, peak.x, peak.y, th * 0.5, owner);
+    return peak.y - th * 0.5;
+  }
+
   private drawLumberCamp(ctx: CanvasRenderingContext2D, st: BSite): number {
     const { T, R, B, L, th, hh, s, m, owner, under, prog } = st;
     const H = Math.max(5, th * 0.52) * prog;
@@ -1958,6 +2099,7 @@ export class Renderer {
         case 'mill': topY = this.drawMill(ctx, site); break;
         case 'lumber_camp': topY = this.drawLumberCamp(ctx, site); break;
         case 'mining_camp': topY = this.drawMiningCamp(ctx, site); break;
+        case 'dock': topY = this.drawDock(ctx, site); break;
         default: topY = this.drawHouse(ctx, site); break;
       }
     }
@@ -2390,6 +2532,242 @@ export class Renderer {
     }
   }
 
+  /** Ângulo desenhado de cada barco (suavizado — a proa VIRA, não teleporta). */
+  private boatAngles = new Map<number, { a: number; t: number }>();
+
+  /** Barcos: casco alongado que ROTACIONA de verdade pra direção do movimento
+   *  (proa na frente, popa atrás — nunca de lado). Mastro/vela/bandeira ficam
+   *  EM PÉ na tela (leitura 3D); balanço suave na água + rastro de espuma. */
+  private drawBoat(
+    ctx: CanvasRenderingContext2D,
+    px: (x: number, y: number) => number,
+    py: (x: number, y: number) => number,
+    hh: number,
+    u: UnitSnap,
+    wx: number,
+    wy: number,
+    selected: boolean,
+    now: number,
+  ): void {
+    const sx = px(wx, wy);
+    const sy = py(wx, wy);
+    const U = hh; // escala base
+    const color = this.gs.colorOf(u.owner);
+    const moving = u.state === 'moving' || u.state === 'movingToGather' || u.state === 'returning' || u.state === 'movingToAttack';
+
+    // --- ângulo na TELA a partir do vetor de movimento no MUNDO (projeção iso) ---
+    const f = this.gs.boatFacing(u) ?? { x: 1, y: 0 };
+    const dxS = px(wx + f.x, wy + f.y) - sx;
+    const dyS = py(wx + f.x, wy + f.y) - sy;
+    const tgt = Math.atan2(dyS, dxS);
+    const rec = this.boatAngles.get(u.id);
+    let ang = tgt;
+    if (rec) {
+      let diff = tgt - rec.a;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      const dtl = Math.min(0.12, Math.max(0, (now - rec.t) / 1000));
+      ang = rec.a + diff * Math.min(1, dtl * 7); // manobra suave (~0.5s pra meia-volta)
+    }
+    this.boatAngles.set(u.id, { a: ang, t: now });
+    if (this.boatAngles.size > 128 && (u.id & 7) === 0) {
+      for (const id of this.boatAngles.keys()) if (!this.gs.units.has(id)) this.boatAngles.delete(id);
+    }
+
+    // balanço na água (bob + leve jogar de lado, dessincronizado por id)
+    const bob = Math.sin(now * 0.0026 + u.id * 1.7) * U * 0.06;
+    const roll = Math.sin(now * 0.0019 + u.id * 2.3) * 0.035;
+    const cy = sy + bob;
+
+    const galley = u.type === 'war_galley';
+    const trans = u.type === 'transport';
+    const L = U * (galley ? 2.7 : trans ? 2.2 : 1.9); // comprimento do casco
+    const W = U * (galley ? 0.62 : trans ? 0.78 : 0.6); // meia-boca
+
+    // sombra/reflexo na água (não gira — elipse achatada sob o casco)
+    this.blob(ctx, sx, sy + U * 0.12, L * 0.42, W * 0.7, 'rgba(10,30,44,0.28)');
+
+    // anel de seleção (no "chão", sem girar)
+    if (selected) {
+      ctx.strokeStyle = u.owner === this.gs.you ? '#f8f4e6' : '#e08585';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy + U * 0.1, L * 0.52, W * 1.05, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // ---------- CASCO (gira com o rumo; achatado em Y pra assentar no iso) ----------
+    ctx.save();
+    ctx.translate(sx, cy);
+    ctx.rotate(ang + roll * 0.4);
+    ctx.scale(1, 0.62); // perspectiva isométrica do convés
+
+    // rastro de espuma atrás quando navegando
+    if (moving) {
+      const wob = Math.sin(now * 0.012 + u.id) * W * 0.16;
+      ctx.strokeStyle = 'rgba(235,245,250,0.5)';
+      ctx.lineWidth = Math.max(1, U * 0.09);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-L * 0.52, -W * 0.4 + wob);
+      ctx.quadraticCurveTo(-L * 0.8, -W * 0.55 + wob, -L * 1.05, -W * 0.75 + wob);
+      ctx.moveTo(-L * 0.52, W * 0.4 - wob);
+      ctx.quadraticCurveTo(-L * 0.8, W * 0.55 - wob, -L * 1.05, W * 0.75 - wob);
+      ctx.stroke();
+      // espuma na proa
+      this.blob(ctx, L * 0.5, 0, U * 0.16, U * 0.1, 'rgba(240,248,252,0.6)');
+    }
+
+    const hull = (inset: number, c1: string, c2?: string): void => {
+      ctx.beginPath();
+      ctx.moveTo(L * 0.5 - inset, 0); // proa (afilada)
+      ctx.quadraticCurveTo(L * 0.18, -W + inset * 0.7, -L * 0.34, -W * 0.86 + inset * 0.7);
+      ctx.quadraticCurveTo(-L * 0.5 + inset * 0.6, -W * 0.5, -L * 0.5 + inset * 0.6, 0); // popa reta/arredondada
+      ctx.quadraticCurveTo(-L * 0.5 + inset * 0.6, W * 0.5, -L * 0.34, W * 0.86 - inset * 0.7);
+      ctx.quadraticCurveTo(L * 0.18, W - inset * 0.7, L * 0.5 - inset, 0);
+      ctx.closePath();
+      if (c2) {
+        const g = ctx.createLinearGradient(0, -W, 0, W);
+        g.addColorStop(0, c1);
+        g.addColorStop(1, c2);
+        ctx.fillStyle = g;
+      } else {
+        ctx.fillStyle = c1;
+      }
+      ctx.fill();
+    };
+    // costado (madeira escura) -> convés (madeira clara) -> tábuas
+    hull(0, '#4a3421', '#2f2013');
+    hull(U * 0.16, '#8a6a43', '#6d5232');
+    // tábuas do convés (linhas transversais suaves)
+    ctx.strokeStyle = 'rgba(52,36,20,0.5)';
+    ctx.lineWidth = Math.max(0.7, U * 0.045);
+    for (let i = -3; i <= 3; i++) {
+      const xx = (i / 3.6) * L * 0.42;
+      const ww = W * (0.92 - Math.abs(i) * 0.16) - U * 0.14;
+      if (ww <= 0) continue;
+      ctx.beginPath();
+      ctx.moveTo(xx, -ww);
+      ctx.lineTo(xx, ww);
+      ctx.stroke();
+    }
+    // filete da cor do dono ao longo da borda (posse legível de longe)
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.2, U * 0.09);
+    ctx.beginPath();
+    ctx.moveTo(L * 0.48, 0);
+    ctx.quadraticCurveTo(L * 0.18, -W * 0.98, -L * 0.34, -W * 0.84);
+    ctx.stroke();
+
+    if (galley) {
+      // aríete na proa + fileira de escudos no costado
+      ctx.fillStyle = '#3a2d1c';
+      ctx.beginPath();
+      ctx.moveTo(L * 0.5, 0);
+      ctx.lineTo(L * 0.66, -W * 0.12);
+      ctx.lineTo(L * 0.66, W * 0.12);
+      ctx.closePath();
+      ctx.fill();
+      for (let i = 0; i < 4; i++) {
+        const xx = -L * 0.3 + (i / 3) * L * 0.52;
+        this.blob(ctx, xx, -W * 0.86, U * 0.11, U * 0.11, color, shadeHex(color, -0.4));
+        this.blob(ctx, xx, W * 0.86, U * 0.11, U * 0.11, shadeHex(color, -0.18), shadeHex(color, -0.45));
+      }
+    }
+    if (trans && (u.garrison ?? 0) > 0) {
+      // tropa no convés: capacetinhos espiando (1 por unidade embarcada)
+      const n = Math.min(5, u.garrison ?? 0);
+      for (let i = 0; i < n; i++) {
+        const xx = -L * 0.3 + (i / 4) * L * 0.5;
+        const yy = (i % 2 === 0 ? -1 : 1) * W * 0.3;
+        this.blob(ctx, xx, yy, U * 0.12, U * 0.12, '#c9ccd2', '#8d9198');
+      }
+    }
+    if (u.type === 'fishing_boat' && (u.carryAmount ?? 0) > 0.5) {
+      // pilha de peixe prateado na popa (voltando cheio pro Porto)
+      this.blob(ctx, -L * 0.3, 0, U * 0.2, U * 0.14, '#cfe0ea', '#93a9b6');
+      this.blob(ctx, -L * 0.36, W * 0.16, U * 0.12, U * 0.09, '#dbe9f1');
+    }
+    ctx.restore();
+
+    // ---------- MASTRO/VELA (em pé na tela — dá o volume 3D) ----------
+    const mastX = sx + Math.cos(ang) * (galley ? -U * 0.1 : 0) * 0.6;
+    const mastH = U * (galley ? 1.7 : trans ? 1.2 : 1.15);
+    const mastTop = cy - mastH;
+    ctx.strokeStyle = '#3d2c19';
+    ctx.lineWidth = Math.max(1.4, U * 0.11);
+    ctx.beginPath();
+    ctx.moveTo(mastX, cy - U * 0.06);
+    ctx.lineTo(mastX, mastTop);
+    ctx.stroke();
+    // vela: enfunada pro lado do rumo (cos do ângulo dá o "lado" na tela)
+    const side = Math.cos(ang) >= 0 ? 1 : -1;
+    const belly = (moving ? 0.55 : 0.34) * side;
+    const sailH = mastH * (galley ? 0.72 : 0.62);
+    const sailTop = mastTop + mastH * 0.12;
+    const sailW = U * (galley ? 0.95 : 0.7);
+    ctx.beginPath();
+    ctx.moveTo(mastX, sailTop);
+    ctx.quadraticCurveTo(mastX + sailW * belly * 1.6, sailTop + sailH * 0.5, mastX, sailTop + sailH);
+    ctx.quadraticCurveTo(mastX + sailW * belly * 2.3, sailTop + sailH * 0.52, mastX, sailTop);
+    ctx.closePath();
+    const sailG = ctx.createLinearGradient(mastX, sailTop, mastX + sailW * side, sailTop + sailH);
+    sailG.addColorStop(0, '#f3ecd9');
+    sailG.addColorStop(1, '#d9cfb4');
+    ctx.fillStyle = sailG;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(60,44,24,0.55)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    if (galley) {
+      // listra da cor do dono na vela (estandarte de guerra)
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(1.5, U * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(mastX + sailW * belly * 0.7, sailTop + sailH * 0.28);
+      ctx.quadraticCurveTo(mastX + sailW * belly * 1.5, sailTop + sailH * 0.5, mastX + sailW * belly * 0.7, sailTop + sailH * 0.74);
+      ctx.stroke();
+    }
+    // flâmula no topo tremulando
+    const flap = Math.sin(now * 0.008 + u.id) * U * 0.08;
+    ctx.beginPath();
+    ctx.moveTo(mastX, mastTop);
+    ctx.lineTo(mastX + U * 0.42 * side, mastTop + U * 0.09 + flap * 0.4);
+    ctx.lineTo(mastX, mastTop + U * 0.2);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+
+    // pescando: linha + bocejo d'água (barco parado no banco de peixes)
+    if (u.type === 'fishing_boat' && u.state === 'gathering') {
+      const cast = Math.cos(ang) >= 0 ? 1 : -1;
+      const tipX = sx + U * 1.05 * cast;
+      const tipY = cy - U * 0.55;
+      ctx.strokeStyle = 'rgba(40,30,18,0.8)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sx + U * 0.3 * cast, cy - U * 0.2);
+      ctx.quadraticCurveTo(tipX, tipY - U * 0.3, tipX, tipY);
+      ctx.lineTo(tipX, sy + U * 0.16);
+      ctx.stroke();
+      const rr = ((now * 0.0016 + u.id * 0.37) % 1);
+      ctx.strokeStyle = `rgba(235,245,250,${0.55 * (1 - rr)})`;
+      ctx.beginPath();
+      ctx.ellipse(tipX, sy + U * 0.16, U * 0.3 * rr + 1, U * 0.14 * rr + 0.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // barra de vida acima do mastro (mesma convenção das unidades: aparece
+    // ferido OU selecionado; máximo inclui upgrades do dono)
+    const ownerTechs = this.gs.playerSnaps.get(u.owner)?.techs;
+    const maxHp = (UNIT_DEFS[u.type]?.hp ?? u.hp) + (ownerTechs ? techBonus(ownerTechs, u.type).hp : 0);
+    if (selected || u.hp < maxHp) {
+      const bw = Math.max(16, U * 2.2);
+      const frac = clamp01(u.hp / maxHp);
+      this.bar(ctx, sx - bw / 2, mastTop - U * 0.45, bw, 4, frac, hpColor(frac));
+    }
+  }
+
   private drawUnit(
     ctx: CanvasRenderingContext2D,
     px: (x: number, y: number) => number,
@@ -2401,6 +2779,10 @@ export class Renderer {
     selected: boolean,
     now: number,
   ): void {
+    if (isNavalUnit(u.type)) {
+      this.drawBoat(ctx, px, py, hh, u, wx, wy, selected, now);
+      return;
+    }
     const sx = px(wx, wy);
     const sy = py(wx, wy);
     const mounted = u.type === 'knight';

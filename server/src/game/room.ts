@@ -30,6 +30,12 @@ import {
   TRAIN_QUEUE_MAX,
   UNIT_AGE_REQ,
   UNIT_DEFS,
+  isNavalUnit,
+  BOAT_SEPARATION,
+  FISH_BOAT_CARRY,
+  TILE_GRASS,
+  TILE_WATER,
+  TRANSPORT_CAP,
   SHEEP_CONVERT_RANGE,
   SHEEP_CONVERT_EVERY_TICKS,
   SHEEP_DECAY_PER_S,
@@ -58,6 +64,7 @@ import type {
   ResourceType,
   ServerMessage,
   SheepSnap,
+  TerrainKind,
   UnitSnap,
   UnitType,
 } from '@age/shared';
@@ -84,6 +91,8 @@ export type SendFn = (playerId: number, msg: ServerMessage) => void;
 
 export class Game {
   readonly grid: Grid;
+  /** Grade dos BARCOS: bloqueia grama; água funda e raso são passáveis. */
+  readonly navalGrid: Grid;
   readonly map: MapData;
   units = new Map<number, Unit>();
   buildings = new Map<number, Building>();
@@ -111,11 +120,27 @@ export class Game {
     private readonly send: SendFn,
     private readonly onGameOver: (winner: number, winnerName: string) => void,
     mode: GameMode = 'normal',
+    terrain: TerrainKind = 'classic',
   ) {
-    const gen = generateMap(members.length);
+    const gen = generateMap(members.length, undefined, terrain);
     this.grid = gen.grid;
     this.map = { size: gen.grid.size, tiles: gen.grid.tiles };
     this.nextId = gen.nextId;
+
+    // Grade NAVAL: barcos andam onde NÃO é grama (água funda + raso). Compartilha
+    // os tiles com a grade terrestre; só o `blocked` difere. Prédios em terra já
+    // ficam bloqueados pela grama; o Porto (na água) e os bancos de peixe entram
+    // aqui (e são mantidos em blockFootprint/unblockFootprint/depleção de nó).
+    const navalBlocked = new Uint8Array(gen.grid.size * gen.grid.size);
+    for (let i = 0; i < gen.grid.tiles.length; i++) {
+      // barco navega SÓ na água FUNDA; grama e o VAU (banco de areia) bloqueiam
+      // (o vau é uma travessia de TERRA — barco não passa por cima).
+      if (gen.grid.tiles[i] !== TILE_WATER) navalBlocked[i] = 1;
+    }
+    for (const n of gen.nodes) {
+      if (n.type === 'fish') navalBlocked[idx(n.tileX, n.tileY, gen.grid.size)] = 1;
+    }
+    this.navalGrid = { size: gen.grid.size, tiles: gen.grid.tiles, blocked: navalBlocked };
 
     const battle = mode === 'batalha';
     const baseRes = battle ? BATTLE_STARTING_RESOURCES : STARTING_RESOURCES;
@@ -339,6 +364,7 @@ export class Game {
     if (u.attackTargetId !== undefined) s.targetId = u.attackTargetId;
     else if (u.gatherTargetId !== undefined) s.targetId = u.gatherTargetId;
     else if (u.buildTargetId !== undefined) s.targetId = u.buildTargetId;
+    if (u.cargo?.length) s.garrison = u.cargo.length; // transporte: quantos a bordo
     return s;
   }
 
@@ -367,7 +393,11 @@ export class Game {
 
   private popOf(playerId: number): number {
     let total = 0;
-    for (const u of this.units.values()) if (u.owner === playerId) total += UNIT_DEFS[u.type].pop;
+    for (const u of this.units.values()) {
+      if (u.owner === playerId) total += UNIT_DEFS[u.type].pop;
+      // tropa EMBARCADA num transporte também conta (AoE2)
+      if (u.cargo) for (const c of u.cargo) if (c.owner === playerId) total += UNIT_DEFS[c.type].pop;
+    }
     // unidades GUARNECIDAS dentro de prédios ainda contam na população (AoE2)
     for (const b of this.buildings.values()) {
       if (b.garrison) for (const u of b.garrison) if (u.owner === playerId) total += UNIT_DEFS[u.type].pop;
@@ -603,18 +633,32 @@ export class Game {
     return out;
   }
 
+  /** Grade de movimento da unidade: barcos usam a naval, o resto a terrestre. */
+  private gridFor(u: Unit): Grid {
+    return isNavalUnit(u.type) ? this.navalGrid : this.grid;
+  }
+
   private cmdMove(playerId: number, unitIds: number[], x: number, y: number, queue = false): void {
-    const units = this.ownedUnits(playerId, unitIds);
+    const all = this.ownedUnits(playerId, unitIds);
     // Pastoreio (Fase 2): ovelhas PRÓPRIAS entre os ids também recebem a ordem.
     const herd = unitIds
       .map((id) => this.sheep.get(id))
       .filter((s): s is Sheep => !!s && s.owner === playerId);
-    if (units.length === 0 && herd.length === 0) return;
-    const spots = collectSpreadTiles(this.grid, Math.round(x), Math.round(y), Math.max(units.length + herd.length, 1));
-    units.forEach((u, i) => {
-      const target = spots[i] ?? spots[spots.length - 1] ?? { x: Math.round(x), y: Math.round(y) };
-      const wx = target.x + 0.5;
-      const wy = target.y + 0.5;
+    if (all.length === 0 && herd.length === 0) return;
+    // Espalha destinos POR DOMÍNIO: barcos ganham tiles de água, o resto de terra
+    // (senão uma seleção mista mandaria barco pra grama e soldado pro rio).
+    const land = all.filter((u) => !isNavalUnit(u.type));
+    const naval = all.filter((u) => isNavalUnit(u.type));
+    const landSpots = land.length + herd.length > 0
+      ? collectSpreadTiles(this.grid, Math.round(x), Math.round(y), land.length + herd.length)
+      : [];
+    const navalSpots = naval.length > 0
+      ? collectSpreadTiles(this.navalGrid, Math.round(x), Math.round(y), naval.length)
+      : [];
+    const dispatch = (u: Unit, target: { x: number; y: number } | undefined): void => {
+      const t = target ?? { x: Math.round(x), y: Math.round(y) };
+      const wx = t.x + 0.5;
+      const wy = t.y + 0.5;
       // Shift (queue) e já se movendo: ENFILEIRA o waypoint (segue depois de chegar).
       if (queue && (u.state === 'moving' || (u.moveQueue?.length ?? 0) > 0)) {
         (u.moveQueue ??= []).push({ x: wx, y: wy });
@@ -623,9 +667,11 @@ export class Game {
         this.pathUnitTo(u, wx, wy);
         u.state = u.path.length > 0 ? 'moving' : 'idle';
       }
-    });
+    };
+    land.forEach((u, i) => dispatch(u, landSpots[i] ?? landSpots[landSpots.length - 1]));
+    naval.forEach((u, i) => dispatch(u, navalSpots[i] ?? navalSpots[navalSpots.length - 1]));
     herd.forEach((s, i) => {
-      const target = spots[units.length + i] ?? spots[spots.length - 1] ?? { x: Math.round(x), y: Math.round(y) };
+      const target = landSpots[land.length + i] ?? landSpots[landSpots.length - 1] ?? { x: Math.round(x), y: Math.round(y) };
       this.pathSheepTo(s, target.x + 0.5, target.y + 0.5);
     });
   }
@@ -696,16 +742,47 @@ export class Game {
    *  protegidas; o prédio atira +1 flecha por unidade dentro). */
   private cmdGarrison(playerId: number, unitIds: number[], targetId: number): void {
     const b = this.buildings.get(targetId);
-    if (!b || b.owner !== playerId || b.progress < 1 || !GARRISON_CAP[b.type]) return;
+    if (b) {
+      if (b.owner !== playerId || b.progress < 1 || !GARRISON_CAP[b.type]) return;
+      for (const u of this.ownedUnits(playerId, unitIds)) {
+        if (isNavalUnit(u.type)) continue; // barco não entra em prédio
+        this.clearTasks(u);
+        u.garrisonTargetId = targetId;
+        if (this.pathUnitAdjacentTo(u, b.tileX, b.tileY, BUILDING_DEFS[b.type].size)) {
+          u.state = 'movingToGarrison';
+        } else {
+          this.enterGarrison(u, b); // já colado no prédio → entra na hora
+        }
+      }
+      return;
+    }
+    // EMBARCAR: alvo é um barco de TRANSPORTE próprio — a tropa anda até o tile
+    // de terra mais próximo do barco (pathUnitTo clampa pro caminhável) e sobe
+    // quando chega perto (updateMovingToGarrison re-mira se o barco se mexer).
+    const t = this.units.get(targetId);
+    if (!t || t.owner !== playerId || t.type !== 'transport') return;
     for (const u of this.ownedUnits(playerId, unitIds)) {
+      if (isNavalUnit(u.type)) continue; // só unidade terrestre embarca
       this.clearTasks(u);
       u.garrisonTargetId = targetId;
-      if (this.pathUnitAdjacentTo(u, b.tileX, b.tileY, BUILDING_DEFS[b.type].size)) {
-        u.state = 'movingToGarrison';
-      } else {
-        this.enterGarrison(u, b); // já colado no prédio → entra na hora
-      }
+      this.pathUnitTo(u, t.x, t.y);
+      u.state = 'movingToGarrison';
+      u.repathTimer = 1.2;
     }
+  }
+
+  /** Unidade terrestre sobe no barco de transporte (some do mapa, vira cargo). */
+  private enterTransport(u: Unit, t: Unit): void {
+    u.garrisonTargetId = undefined;
+    if ((t.cargo?.length ?? 0) >= TRANSPORT_CAP) {
+      u.state = 'idle'; // barco cheio: fica na margem
+      return;
+    }
+    this.units.delete(u.id);
+    this.retargetAttackersOf(u.id);
+    this.clearTasks(u);
+    u.state = 'idle';
+    (t.cargo ??= []).push(u);
   }
 
   /** Unidade entra no prédio (removida do mapa, guardada em b.garrison). Respeita
@@ -722,11 +799,41 @@ export class Game {
     (b.garrison ??= []).push(u);
   }
 
-  /** Ejetar: devolve TODAS as unidades guarnecidas ao mapa, ao redor do prédio. */
+  /** Ejetar: devolve as unidades guarnecidas ao mapa (prédio) ou DESEMBARCA o
+   *  transporte na costa (o id serve pros dois — o contador de ids é único). */
   private cmdUnload(playerId: number, buildingId: number): void {
     const b = this.buildings.get(buildingId);
-    if (!b || b.owner !== playerId) return;
-    this.ejectGarrison(b);
+    if (b) {
+      if (b.owner !== playerId) return;
+      this.ejectGarrison(b);
+      return;
+    }
+    const t = this.units.get(buildingId);
+    if (!t || t.owner !== playerId || t.type !== 'transport') return;
+    this.unloadTransport(t, playerId);
+  }
+
+  /** Desembarque: despeja a tropa nos tiles de TERRA mais próximos do barco.
+   *  Precisa estar encostado na costa (senão avisa e não faz nada). */
+  private unloadTransport(t: Unit, playerId: number): void {
+    const cargo = t.cargo;
+    if (!cargo || cargo.length === 0) return;
+    // BFS do tile do barco coletando os tiles TERRESTRES caminháveis mais
+    // próximos; limita ao raio ~3 (encostado na margem) pra não teleportar longe.
+    const spots = collectSpreadTiles(this.grid, Math.floor(t.x), Math.floor(t.y), cargo.length)
+      .filter((p) => Math.hypot(p.x + 0.5 - t.x, p.y + 0.5 - t.y) <= 3.2);
+    if (spots.length === 0) {
+      this.errorTo(playerId, 'err.unload_no_shore');
+      return;
+    }
+    cargo.splice(0).forEach((u, i) => {
+      const p = spots[i % spots.length];
+      u.x = p.x + 0.5;
+      u.y = p.y + 0.5;
+      this.clearTasks(u);
+      u.state = 'idle';
+      this.units.set(u.id, u);
+    });
   }
 
   private ejectGarrison(b: Building): void {
@@ -748,6 +855,30 @@ export class Game {
   }
 
   private updateMovingToGarrison(u: Unit, dt: number): void {
+    // --- EMBARQUE em transporte: o alvo é um BARCO (pode estar se mexendo) ---
+    const t = this.units.get(u.garrisonTargetId ?? -1);
+    if (t && t.type === 'transport') {
+      if (!this.allied(t.owner, u.owner)) {
+        u.garrisonTargetId = undefined;
+        u.state = 'idle';
+        return;
+      }
+      if (Math.hypot(t.x - u.x, t.y - u.y) <= 1.9) {
+        this.enterTransport(u, t); // chegou na beira: sobe
+        return;
+      }
+      this.advanceAlongPath(u, dt);
+      u.repathTimer -= dt;
+      if (u.repathTimer <= 0) {
+        u.repathTimer = 1.2; // barco anda: re-mira o tile de terra mais próximo dele
+        this.pathUnitTo(u, t.x, t.y);
+        if (u.path.length === 0 && Math.hypot(t.x - u.x, t.y - u.y) > 1.9) {
+          u.state = 'idle'; // não alcança daqui (barco longe da margem)
+          u.garrisonTargetId = undefined;
+        }
+      }
+      return;
+    }
     this.advanceAlongPath(u, dt);
     if (u.path.length > 0) return;
     const b = this.buildings.get(u.garrisonTargetId ?? -1);
@@ -781,12 +912,13 @@ export class Game {
   }
 
   private pathUnitTo(u: Unit, tx: number, ty: number): void {
+    const grid = this.gridFor(u); // barco navega na grade naval
     const gx = Math.round(tx - 0.5);
     const gy = Math.round(ty - 0.5);
     let goalX = gx;
     let goalY = gy;
-    if (!isWalkable(this.grid, gx, gy)) {
-      const near = nearestWalkableTile(this.grid, gx, gy);
+    if (!isWalkable(grid, gx, gy)) {
+      const near = nearestWalkableTile(grid, gx, gy);
       if (!near) {
         u.path = [];
         return;
@@ -796,8 +928,8 @@ export class Game {
     }
     const startX = Math.floor(u.x);
     const startY = Math.floor(u.y);
-    const goals = new Set<number>([idx(goalX, goalY, this.grid.size)]);
-    const path = findPath(this.grid, startX, startY, goals);
+    const goals = new Set<number>([idx(goalX, goalY, grid.size)]);
+    const path = findPath(grid, startX, startY, goals);
     u.path = path ?? [];
     u.pathTargetX = goalX + 0.5;
     u.pathTargetY = goalY + 0.5;
@@ -807,8 +939,9 @@ export class Game {
    *  por outros coletores do mesmo alvo — espalha os aldeões em volta da
    *  árvore/mina/fazenda em vez de empilhar todos no mesmo tile (AoE2). */
   private pathUnitAdjacentToSpread(u: Unit, bx: number, by: number, size: number, targetId: number): boolean {
+    const grid = this.gridFor(u); // barco pesqueiro cerca o peixe pela ÁGUA
     const ring = ringTiles(bx - 1, by - 1, bx + size, by + size).filter((p) =>
-      isWalkable(this.grid, p.x, p.y),
+      isWalkable(grid, p.x, p.y),
     );
     if (ring.length === 0) return false;
     // tiles "reservados": onde cada outro coletor deste alvo está (ou vai parar)
@@ -817,14 +950,14 @@ export class Game {
       if (o.id === u.id || o.owner !== u.owner || o.gatherTargetId !== targetId) continue;
       const gx = o.path.length > 0 ? Math.round((o.pathTargetX ?? o.x) - 0.5) : Math.floor(o.x);
       const gy = o.path.length > 0 ? Math.round((o.pathTargetY ?? o.y) - 0.5) : Math.floor(o.y);
-      taken.add(idx(gx, gy, this.grid.size));
+      taken.add(idx(gx, gy, grid.size));
     }
-    const free = ring.filter((p) => !taken.has(idx(p.x, p.y, this.grid.size)));
+    const free = ring.filter((p) => !taken.has(idx(p.x, p.y, grid.size)));
     const goalsArr = free.length > 0 ? free : ring;
     const startX = Math.floor(u.x);
     const startY = Math.floor(u.y);
-    const goals = new Set<number>(goalsArr.map((p) => idx(p.x, p.y, this.grid.size)));
-    const path = findPath(this.grid, startX, startY, goals);
+    const goals = new Set<number>(goalsArr.map((p) => idx(p.x, p.y, grid.size)));
+    const path = findPath(grid, startX, startY, goals);
     if (!path) {
       // já pode estar num tile do anel (livre ou não — não expulsa quem chegou)
       const cur = idx(startX, startY, this.grid.size);
@@ -843,14 +976,15 @@ export class Game {
 
   /** Caminha até um tile caminhável adjacente ao footprint (bx,by,size). */
   private pathUnitAdjacentTo(u: Unit, bx: number, by: number, size: number): boolean {
+    const grid = this.gridFor(u); // barcos encostam no Porto pela água
     const ring = ringTiles(bx - 1, by - 1, bx + size, by + size).filter((p) =>
-      isWalkable(this.grid, p.x, p.y),
+      isWalkable(grid, p.x, p.y),
     );
     if (ring.length === 0) return false;
     const startX = Math.floor(u.x);
     const startY = Math.floor(u.y);
-    const goals = new Set<number>(ring.map((p) => idx(p.x, p.y, this.grid.size)));
-    const path = findPath(this.grid, startX, startY, goals);
+    const goals = new Set<number>(ring.map((p) => idx(p.x, p.y, grid.size)));
+    const path = findPath(grid, startX, startY, goals);
     if (!path) {
       // já pode estar em um tile do anel
       const cur = idx(startX, startY, this.grid.size);
@@ -870,17 +1004,21 @@ export class Game {
   // ---------------- Coleta ----------------
 
   private cmdGather(playerId: number, unitIds: number[], targetId: number): void {
-    const units = this.ownedUnits(playerId, unitIds).filter((u) => u.type === 'villager');
+    const units = this.ownedUnits(playerId, unitIds).filter(
+      (u) => u.type === 'villager' || u.type === 'fishing_boat',
+    );
     if (units.length === 0) return;
     const node = this.nodes.get(targetId);
     const farm = this.buildings.get(targetId);
     const sheep = this.sheep.get(targetId);
     if (node) {
-      for (const u of units) this.startGatherNode(u, node);
+      // PEIXE é só de barco pesqueiro; o resto é só de aldeão.
+      const gatherers = units.filter((u) => (node.type === 'fish') === (u.type === 'fishing_boat'));
+      for (const u of gatherers) this.startGatherNode(u, node);
     } else if (farm && farm.type === 'farm' && farm.owner === playerId && farm.progress >= 1) {
-      for (const u of units) this.startGatherFarm(u, farm);
+      for (const u of units) if (u.type === 'villager') this.startGatherFarm(u, farm);
     } else if (sheep && (sheep.owner === playerId || sheep.owner === SHEEP_WILD_OWNER)) {
-      for (const u of units) this.startGatherSheep(u, sheep);
+      for (const u of units) if (u.type === 'villager') this.startGatherSheep(u, sheep);
     } else {
       this.errorTo(playerId, 'err.bad_gather_target');
     }
@@ -925,12 +1063,14 @@ export class Game {
     u.state = 'movingToGather';
   }
 
-  private findNearestDropOff(playerId: number, x: number, y: number, resource?: ResourceType): Building | null {
+  private findNearestDropOff(playerId: number, x: number, y: number, resource?: ResourceType, naval = false): Building | null {
     let best: Building | null = null;
     let bestD = Infinity;
     for (const b of this.buildings.values()) {
       const def = BUILDING_DEFS[b.type];
       if (b.owner !== playerId || b.progress < 1 || !def.isDropOff) continue;
+      // domínio: barco entrega SÓ no Porto (pela água); aldeão não usa o Porto
+      if (naval !== (b.type === 'dock')) continue;
       // depósito especializado: só aceita seu(s) recurso(s). accepts ausente = aceita tudo (Centro da Cidade).
       if (resource !== undefined && def.accepts && !def.accepts.includes(resource)) continue;
       const cx = b.tileX + def.size / 2;
@@ -944,11 +1084,13 @@ export class Game {
     return best;
   }
 
-  private findNearestNodeOfResource(resource: ResourceType, x: number, y: number, maxDist: number): ResNode | null {
+  private findNearestNodeOfResource(resource: ResourceType, x: number, y: number, maxDist: number, naval = false): ResNode | null {
     let best: ResNode | null = null;
     let bestD = Infinity;
     for (const n of this.nodes.values()) {
       if (NODE_DEFS[n.type].resource !== resource) continue;
+      // domínio: barco pesqueiro só emenda em PEIXE; aldeão nunca pesca
+      if (naval !== (n.type === 'fish')) continue;
       const d = Math.hypot(n.tileX - x, n.tileY - y);
       if (d <= maxDist && d < bestD) {
         bestD = d;
@@ -1021,7 +1163,10 @@ export class Game {
       }
     }
 
-    if (!this.validFootprint(tileX, tileY, def.size)) {
+    const footprintOk = type === 'dock'
+      ? this.validDockFootprint(tileX, tileY, def.size) // Porto: na água, encostado na costa
+      : this.validFootprint(tileX, tileY, def.size);
+    if (!footprintOk) {
       this.errorTo(playerId, 'err.bad_build_location');
       return;
     }
@@ -1043,9 +1188,7 @@ export class Game {
       queue: [],
     };
     this.buildings.set(id, building);
-    for (let yy = tileY; yy < tileY + def.size; yy++) {
-      for (let xx = tileX; xx < tileX + def.size; xx++) this.grid.blocked[idx(xx, yy, this.grid.size)] = 1;
-    }
+    this.blockFootprint(tileX, tileY, def.size);
     dispatch(building);
   }
 
@@ -1091,10 +1234,43 @@ export class Game {
     return true;
   }
 
+  /** Porto: footprint TODO em água FUNDA (sem peixe/porto por baixo — grade
+   *  naval livre) e ENCOSTADO na costa (>=1 vizinho de terra/raso, de onde o
+   *  aldeão constrói). Não deixa em raso pra não trancar o vau. */
+  private validDockFootprint(tileX: number, tileY: number, size: number): boolean {
+    const n = this.grid.size;
+    if (tileX < 0 || tileY < 0 || tileX + size > n || tileY + size > n) return false;
+    for (let yy = tileY; yy < tileY + size; yy++) {
+      for (let xx = tileX; xx < tileX + size; xx++) {
+        const i = idx(xx, yy, n);
+        if (this.grid.tiles[i] !== TILE_WATER) return false;
+        if (this.navalGrid.blocked[i]) return false; // peixe ou outro porto
+      }
+    }
+    return ringTiles(tileX - 1, tileY - 1, tileX + size, tileY + size).some(
+      (p) => isWithinGrid(this.grid, p.x, p.y) && this.grid.tiles[idx(p.x, p.y, n)] !== TILE_WATER,
+    );
+  }
+
+  private blockFootprint(tileX: number, tileY: number, size: number): void {
+    for (let yy = tileY; yy < tileY + size; yy++) {
+      for (let xx = tileX; xx < tileX + size; xx++) {
+        if (!isWithinGrid(this.grid, xx, yy)) continue;
+        const i = idx(xx, yy, this.grid.size);
+        this.grid.blocked[i] = 1;
+        this.navalGrid.blocked[i] = 1; // barcos também não atravessam prédios
+      }
+    }
+  }
+
   private unblockFootprint(tileX: number, tileY: number, size: number): void {
     for (let yy = tileY; yy < tileY + size; yy++) {
       for (let xx = tileX; xx < tileX + size; xx++) {
-        if (isWithinGrid(this.grid, xx, yy)) this.grid.blocked[idx(xx, yy, this.grid.size)] = 0;
+        if (!isWithinGrid(this.grid, xx, yy)) continue;
+        const i = idx(xx, yy, this.grid.size);
+        // volta ao estado do TERRENO: terra livre p/ terrestres, grama bloqueia naval
+        this.grid.blocked[i] = this.grid.tiles[i] === TILE_WATER ? 1 : 0;
+        this.navalGrid.blocked[i] = this.grid.tiles[i] === TILE_GRASS ? 1 : 0;
       }
     }
   }
@@ -1154,7 +1330,9 @@ export class Game {
     const cap = this.popCapOf(b.owner);
     if (pop + def.pop > cap) return; // segura na fila até liberar espaço
 
-    const spot = this.findFreeSpotNear(b.tileX, b.tileY, BUILDING_DEFS[b.type].size);
+    // Barco nasce na ÁGUA ao lado do Porto; o resto nasce na grama ao lado.
+    const spawnGrid = isNavalUnit(head.unit) ? this.navalGrid : this.grid;
+    const spot = this.findFreeSpotNear(b.tileX, b.tileY, BUILDING_DEFS[b.type].size, spawnGrid);
     if (!spot) return; // sem espaço livre ainda; tenta no próximo tick
 
     b.queue.shift();
@@ -1175,7 +1353,8 @@ export class Game {
           fb.type === 'farm' && fb.owner === b.owner && fb.progress >= 1 &&
           rx >= fb.tileX && rx < fb.tileX + fs && ry >= fb.tileY && ry < fb.tileY + fs,
       );
-      if (nodeAt && newUnit.type === 'villager') {
+      if (nodeAt && (nodeAt.type === 'fish' ? newUnit.type === 'fishing_boat' : newUnit.type === 'villager')) {
+        // ponto de reunião num recurso: aldeão sai colhendo / pesqueiro sai pescando
         this.startGatherNode(newUnit, nodeAt);
       } else if (farmAt && newUnit.type === 'villager') {
         // ponto de reunião numa fazenda: aldeão novo já sai colhendo (AoE2)
@@ -1193,10 +1372,10 @@ export class Game {
     return UNIT_TRAIN_TIME[head.unit];
   }
 
-  private findFreeSpotNear(bx: number, by: number, size: number): { x: number; y: number } | null {
+  private findFreeSpotNear(bx: number, by: number, size: number, grid: Grid = this.grid): { x: number; y: number } | null {
     const ring = ringTiles(bx - 1, by - 1, bx + size, by + size);
     for (const p of ring) {
-      if (isWalkable(this.grid, p.x, p.y)) return p;
+      if (isWalkable(grid, p.x, p.y)) return p;
     }
     return null;
   }
@@ -1355,9 +1534,12 @@ export class Game {
    *  espaçamento de "formação" do AoE2 sem interferir em quem está andando
    *  ou trabalhando. */
   private separateIdleUnits(dt: number): void {
+    // Terrestres: só as PARADAS se afastam. BARCOS: sempre (parados OU navegando)
+    // — barco colado em barco "vira papel" e não dá pra ver quantos são; o
+    // empurra-afasta contínuo mantém a sensação espacial (raio BOAT_SEPARATION).
     const idle: Unit[] = [];
     for (const u of this.units.values()) {
-      if (u.state === 'idle' && u.path.length === 0) idle.push(u);
+      if (isNavalUnit(u.type) || (u.state === 'idle' && u.path.length === 0)) idle.push(u);
     }
     if (idle.length < 2) return;
     const MIN_D = 0.6;   // distância mínima entre centros (tiles)
@@ -1366,10 +1548,11 @@ export class Game {
       const a = idle[i];
       for (let j = i + 1; j < idle.length; j++) {
         const b = idle[j];
+        const minD = isNavalUnit(a.type) && isNavalUnit(b.type) ? BOAT_SEPARATION : MIN_D;
         let dx = b.x - a.x;
         let dy = b.y - a.y;
         let d = Math.hypot(dx, dy);
-        if (d >= MIN_D) continue;
+        if (d >= minD) continue;
         if (d < 1e-4) {
           // exatamente empilhadas: separa num ângulo determinístico pelos ids
           const ang = ((a.id * 37 + b.id * 61) % 360) * (Math.PI / 180);
@@ -1377,7 +1560,7 @@ export class Game {
           dy = Math.sin(ang);
           d = 1;
         }
-        const step = Math.min((MIN_D - d) / 2, PUSH * dt);
+        const step = Math.min((minD - d) / 2, PUSH * dt);
         const ux = (dx / d) * step;
         const uy = (dy / d) * step;
         this.nudge(a, -ux, -uy);
@@ -1394,10 +1577,11 @@ export class Game {
   private freeTrappedUnits(): void {
     for (const u of this.units.values()) {
       if (u.path.length > 0) continue;
+      const grid = this.gridFor(u); // barco preso (ex.: Porto colocado em cima) volta pra água
       const tx = Math.floor(u.x);
       const ty = Math.floor(u.y);
-      if (isWalkable(this.grid, tx, ty)) continue;
-      const spot = nearestWalkableTile(this.grid, tx, ty);
+      if (isWalkable(grid, tx, ty)) continue;
+      const spot = nearestWalkableTile(grid, tx, ty);
       if (!spot) continue;
       u.x = spot.x + 0.5;
       u.y = spot.y + 0.5;
@@ -1495,7 +1679,7 @@ export class Game {
   private nudge(u: Unit, dx: number, dy: number): void {
     const nx = u.x + dx;
     const ny = u.y + dy;
-    if (isWalkable(this.grid, Math.floor(nx), Math.floor(ny))) {
+    if (isWalkable(this.gridFor(u), Math.floor(nx), Math.floor(ny))) {
       u.x = nx;
       u.y = ny;
     }
@@ -1523,13 +1707,13 @@ export class Game {
   }
 
   private updateAutoAggro(u: Unit, dt: number): void {
-    if (u.type === 'villager') {
-      // Aldeão parado segurando carga (drop-off destruído/indisponível quando
+    if (u.type === 'villager' || u.type === 'fishing_boat') {
+      // Coletor parado segurando carga (drop-off destruído/indisponível quando
       // ficou 'idle' em updateGathering/updateReturning): reusa aggroTimer para
       // tentar reentregar periodicamente em vez de travar ocioso para sempre.
       if (u.carryAmount > 0 && u.aggroTimer <= 0) {
         u.aggroTimer = 1; // ~1x/s, evita varredura de prédios a cada tick
-        const drop = this.findNearestDropOff(u.owner, u.x, u.y, u.carryType);
+        const drop = this.findNearestDropOff(u.owner, u.x, u.y, u.carryType, isNavalUnit(u.type));
         if (drop) {
           u.dropOffId = drop.id;
           if (this.pathUnitAdjacentTo(u, drop.tileX, drop.tileY, BUILDING_DEFS[drop.type].size)) {
@@ -1539,17 +1723,25 @@ export class Game {
       }
       return;
     }
+    if (u.type === 'transport') return; // transporte não briga
     // Bot FÁCIL: soldados NÃO perseguem — seguram posição (a IA original "não
     // atacava"). Torres e Centro da Vila do bot ainda defendem a base sozinhos.
     if (this.players.get(u.owner)?.difficulty === 'easy') return;
     if (u.aggroTimer > 0) return;
     u.aggroTimer = 0.5; // ~2x/s
     const sight = UNIT_DEFS[u.type].sight;
+    const meNaval = isNavalUnit(u.type);
+    const meMelee = UNIT_DEFS[u.type].range <= 1.5;
     let bestId: number | null = null;
     let bestD = Infinity;
     for (const other of this.units.values()) {
       if (this.allied(other.owner, u.owner)) continue;
+      // corpo-a-corpo terrestre não alcança barco (não fica pingando na margem);
+      // galé não persegue terra adentro: só engaja alvo TERRESTRE já no alcance.
+      const otherNaval = isNavalUnit(other.type);
+      if (!meNaval && meMelee && otherNaval) continue;
       const d = Math.hypot(other.x - u.x, other.y - u.y);
+      if (meNaval && !otherNaval && d > UNIT_DEFS[u.type].range) continue;
       if (d <= sight && d < bestD) {
         bestD = d;
         bestId = other.id;
@@ -1638,7 +1830,8 @@ export class Game {
     const amountAvail = node ? node.amount : sheep ? sheep.food : farm!.foodLeft ?? 0;
     // techs econômicas do Mercado: coleta mais rápida e mais capacidade de carga
     const techs = this.players.get(u.owner)?.techs ?? [];
-    const cap = carryCapacity(techs);
+    // Barco de pesca tem porão próprio (maior que o cesto do aldeão).
+    const cap = u.type === 'fishing_boat' ? FISH_BOAT_CARRY : carryCapacity(techs);
     const capacity = cap - (u.carryType === resource ? u.carryAmount : 0);
     if (u.carryType !== resource) {
       u.carryType = resource;
@@ -1677,14 +1870,14 @@ export class Game {
     if (sourceGone) {
       // fonte esgotou antes de encher: EMENDA na próxima do mesmo recurso
       // (AoE2) — só vai entregar quando encher; sem outra fonte, entrega o
-      // que tem (se algo) e para.
+      // que tem (se algo) e para. (Barco emenda em PEIXE; nunca em fazenda.)
       const resource = u.gatherResource;
-      const near = resource ? this.findNearestNodeOfResource(resource, u.x, u.y, 10) : null;
+      const near = resource ? this.findNearestNodeOfResource(resource, u.x, u.y, 10, isNavalUnit(u.type)) : null;
       if (near) {
         this.startGatherNode(u, near);
         return;
       }
-      if (resource === 'food') {
+      if (resource === 'food' && u.type === 'villager') {
         const nextFarm = this.findNearestOwnFarm(u.owner, u.x, u.y, 10);
         if (nextFarm) {
           this.startGatherFarm(u, nextFarm);
@@ -1760,7 +1953,7 @@ export class Game {
 
   /** Manda o aldeão entregar a carga no drop-off mais próximo (ou fica idle). */
   private sendToDropOff(u: Unit): void {
-    const drop = this.findNearestDropOff(u.owner, u.x, u.y, u.carryType);
+    const drop = this.findNearestDropOff(u.owner, u.x, u.y, u.carryType, isNavalUnit(u.type));
     if (!drop) {
       u.state = 'idle';
       return;
@@ -1794,12 +1987,12 @@ export class Game {
       u.state = 'idle';
       return;
     }
-    const near = this.findNearestNodeOfResource(resource, u.x, u.y, 10);
+    const near = this.findNearestNodeOfResource(resource, u.x, u.y, 10, isNavalUnit(u.type));
     if (near) {
       this.startGatherNode(u, near);
       return;
     }
-    if (resource === 'food') {
+    if (resource === 'food' && u.type === 'villager') {
       const farm = this.findNearestOwnFarm(u.owner, u.x, u.y, 10);
       if (farm) {
         this.startGatherFarm(u, farm);
@@ -2016,4 +2209,7 @@ const UNIT_TRAIN_TIME: Record<UnitType, number> = {
   swordsman: UNIT_DEFS.swordsman.trainTime,
   archer: UNIT_DEFS.archer.trainTime,
   knight: UNIT_DEFS.knight.trainTime,
+  fishing_boat: UNIT_DEFS.fishing_boat.trainTime,
+  war_galley: UNIT_DEFS.war_galley.trainTime,
+  transport: UNIT_DEFS.transport.trainTime,
 };

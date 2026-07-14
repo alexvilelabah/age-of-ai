@@ -3,7 +3,7 @@
 // Shift/Ctrl), comandos (botão direito) e posicionamento de prédios.
 
 import type { BuildingType, GameCommand } from '@age/shared';
-import { BUILDING_DEFS, GARRISON_CAP, TILE_WATER } from '@age/shared';
+import { BUILDING_DEFS, GARRISON_CAP, TILE_WATER, isNavalUnit } from '@age/shared';
 import type { GameState } from '../state';
 import { music } from '../music';
 import type { Sfx } from './audio';
@@ -307,11 +307,18 @@ export class GameInput {
       }
       return;
     }
-    // Ejetar (U): tira as unidades guarnecidas do prédio selecionado de volta ao mapa.
+    // Ejetar (U): tira as unidades guarnecidas do prédio selecionado — ou
+    // DESEMBARCA o transporte selecionado na costa.
     if (e.key === 'u' || e.key === 'U') {
       const b = this.gs.selectedBuilding();
       if (b && b.owner === this.gs.you && b.garrison) {
         this.deps.onCommand({ kind: 'unload', buildingId: b.id });
+        this.sfx.uiClick();
+        return;
+      }
+      const tr = this.gs.selectedOwnUnits().find((u) => u.type === 'transport' && (u.garrison ?? 0) > 0);
+      if (tr) {
+        this.deps.onCommand({ kind: 'unload', buildingId: tr.id });
         this.sfx.uiClick();
       }
       return;
@@ -546,7 +553,11 @@ export class GameInput {
       const hasVillager = ownUnits.some((u) => u.type === 'villager');
 
       if (pick?.kind === 'node') {
-        if (hasVillager) {
+        // peixe é coisa de BARCO PESQUEIRO; o resto é coisa de aldeão
+        const canGather = pick.node.type === 'fish'
+          ? ownUnits.some((u) => u.type === 'fishing_boat')
+          : hasVillager;
+        if (canGather) {
           this.mark('gather', w.x, w.y, pick.node.id);
           this.cmd({ kind: 'gather', unitIds, targetId: pick.node.id });
         }
@@ -603,6 +614,12 @@ export class GameInput {
         if (pick.unit.owner !== this.gs.you) {
           this.mark('attack', w.x, w.y, pick.unit.id);
           this.cmd({ kind: 'attack', unitIds, targetId: pick.unit.id });
+          return;
+        }
+        // TRANSPORTE próprio + tropa terrestre selecionada → EMBARCAR
+        if (pick.unit.type === 'transport' && ownUnits.some((u) => !isNavalUnit(u.type))) {
+          this.mark('build', w.x, w.y, pick.unit.id);
+          this.cmd({ kind: 'garrison', unitIds, targetId: pick.unit.id });
           return;
         }
         // unidade própria sob o cursor: move até a posição (comportamento simples)

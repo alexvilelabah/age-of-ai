@@ -20,8 +20,10 @@ g.handleMessage(a.id, { type: 'setName', name: 'alex', clientId: CID1 });
 check('A "alex" (cid1) ACEITO', a.name === 'alex' && a.clientId === CID1 && sent(outA, 'nameOk'));
 
 // A cria uma sala (pra provar que o takeover também limpa a sala da conexão antiga)
+// roomSummaries() inclui as salas-vitrine (ids "live-"); filtra só as REAIS.
+const realRooms = () => g.roomSummaries().filter((s: { id: string }) => !s.id.startsWith('live-'));
 g.handleMessage(a.id, { type: 'createRoom' });
-check('A criou uma sala', g.roomSummaries().length === 1);
+check('A criou uma sala', realRooms().length === 1);
 
 // --- REFRESH: a MESMA pessoa (mesmo clientId) reconecta como B, SEM o close de A ter chegado ---
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -30,7 +32,7 @@ const b = g.connect((m: unknown) => outB.push(m));
 g.handleMessage(b.id, { type: 'setName', name: 'alex', clientId: CID1 });
 check('B "alex" (mesmo cid1) ACEITO via takeover', b.name === 'alex' && sent(outB, 'nameOk') && !sent(outB, 'nameTaken'));
 check('conexão antiga A foi despejada (fora do conns)', g.conns.has(a.id) === false);
-check('a sala da conexão antiga foi limpa', g.roomSummaries().length === 0);
+check('a sala da conexão antiga foi limpa', realRooms().length === 0);
 
 // --- Outro usuário (clientId diferente) NÃO pode roubar "alex" ---
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

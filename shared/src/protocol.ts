@@ -51,6 +51,12 @@ export type MarketPrices = Record<'food' | 'wood' | 'stone', number>;
  * já numa era avançada — jogo rápido, direto pro combate). */
 export type GameMode = 'normal' | 'batalha';
 
+/** Terreno do mapa (o "mapa" que o host escolhe):
+ *  'classic' = continente com lagos;
+ *  'river'   = rio cruzando o mapa COM bancos de areia (travessia a pé) + peixe;
+ *  'strait'  = rio dividindo o mapa SEM travessia — só se cruza de barco. */
+export type TerrainKind = 'classic' | 'river' | 'strait';
+
 /** Nível de dificuldade de um bot (escolhido ao adicionar na sala). 'easy' =
  * passivo (só se defende); 'expert' = agressivo + bônus de recursos (Titã). */
 export type BotDifficulty = 'easy' | 'normal' | 'hard' | 'expert';
@@ -59,6 +65,7 @@ export type ClientMessage =
   | { type: 'setName'; name: string; clientId?: string }
   | { type: 'setMode'; mode: GameMode } // apenas host: escolhe Normal/Batalha na sala
   | { type: 'setFog'; fog: boolean } // apenas host: mapa fechado (névoa) ou aberto
+  | { type: 'setTerrain'; terrain: TerrainKind } // apenas host: Clássico ou Rio
   | { type: 'setBotDifficulty'; botId: number; difficulty: BotDifficulty } // apenas host
   | { type: 'listRooms' }
   | { type: 'createRoom' }
@@ -100,7 +107,7 @@ export type ServerMessage =
   | { type: 'nameOk' }              // nome aceito -> pode ir pro lobby
   | { type: 'nameTaken' }           // nome já em uso -> escolha outro
   | { type: 'roomList'; rooms: RoomSummary[] }
-  | { type: 'roomState'; roomId: string; players: RoomPlayer[]; mode: GameMode; fog: boolean }
+  | { type: 'roomState'; roomId: string; players: RoomPlayer[]; mode: GameMode; fog: boolean; terrain: TerrainKind }
   | { type: 'leftRoom' }
   // Erro: o servidor manda um CÓDIGO (traduzido no cliente via i18n) + params
   // opcionais. `age` (número) e `building` (tipo) são convertidos para o nome

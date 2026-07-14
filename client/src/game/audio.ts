@@ -245,6 +245,12 @@ export class Sfx {
       case 'swordsman': this.clink(440, 0.16); break;                                                 // tinido de armadura
       case 'archer':    this.tone(280, 0.05, { type: 'sine', gain: 0.18 }); this.noise(0.07, { filter: 3200, type: 'highpass', gain: 0.16 }); break; // corda de arco
       case 'knight':    this.tone(150, 0.2, { type: 'sawtooth', gain: 0.26, glideTo: 108 }); this.noise(0.13, { filter: 520, gain: 0.13 }); break;   // bufar do cavalo
+      case 'fishing_boat':
+      case 'war_galley':
+      case 'transport': // "chape" d'água + rangido de madeira do casco
+        this.noise(0.16, { filter: 480, type: 'lowpass', gain: 0.2 });
+        this.tone(170, 0.14, { type: 'triangle', gain: 0.12, glideTo: 128 });
+        break;
       default:          this.tone(500, 0.08, {});
     }
   }

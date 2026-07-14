@@ -39,8 +39,11 @@ export interface Unit {
   /** Fila de obras (ids de prédios) a construir em sequência após a atual. */
   buildQueue?: number[];
   attackTargetId?: number;
-  /** Torre/Centro que esta unidade está indo guarnecer (entrar dentro). */
+  /** Torre/Centro (ou barco de TRANSPORTE) que esta unidade vai guarnecer/embarcar. */
   garrisonTargetId?: number;
+  /** Barco de transporte: unidades terrestres embarcadas (fora do mapa; contam
+   *  na população; MORREM se o barco afundar, estilo AoE). */
+  cargo?: Unit[];
   attackCooldown: number; // segundos até o próximo golpe
   repathTimer: number;
   aggroTimer: number;

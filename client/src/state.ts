@@ -25,7 +25,9 @@ import {
   SNAPSHOT_TICKS,
   TICK_MS,
   TILE_GRASS,
+  TILE_WATER,
   UNIT_DEFS,
+  isNavalUnit,
 } from '@age/shared';
 import { FogOfWar } from './game/fog';
 
@@ -79,6 +81,9 @@ export class GameState {
   private prevPos = new Map<number, { x: number; y: number }>();
   private sheepFacingDirs = new Map<number, { x: number; y: number }>();
   private unitFacings = new Map<number, 1 | -1>();
+  /** Direção de movimento dos BARCOS (vetor no mundo): a proa gira de verdade
+   *  (nada de andar de lado). O ângulo desenhado é suavizado no renderer. */
+  private boatFacingDirs = new Map<number, { x: number; y: number }>();
   /** Nós que sumiram do snapshot (recurso esgotou) — para a animação de queda. */
   removedNodes: { node: NodeSnap; at: number }[] = [];
   /** Ovelhas que sumiram (comidas) — para o "poof". */
@@ -180,6 +185,12 @@ export class GameState {
           if (Math.abs(screenDx) > Math.max(0.0001, Math.abs(screenDy) * 0.2)) {
             this.unitFacings.set(u.id, screenDx > 0 ? 1 : -1);
           }
+          // Barcos: guarda o VETOR do deslocamento (a proa aponta pra onde vai).
+          if (isNavalUnit(u.type) && dx * dx + dy * dy > 0.000001) {
+            const f = this.boatFacingDirs.get(u.id);
+            if (f) { f.x = dx; f.y = dy; }
+            else this.boatFacingDirs.set(u.id, { x: dx, y: dy });
+          }
         }
       }
     }
@@ -188,6 +199,7 @@ export class GameState {
       if (!nu) {
         this.deaths.push({ unit: old, at: now });
         this.unitFacings.delete(id);
+        this.boatFacingDirs.delete(id);
       } else if (nu.hp < old.hp) {
         this.hits.push({ x: nu.x, y: nu.y, amount: old.hp - nu.hp, at: now });
         this.lastHit.set(id, now);
@@ -334,6 +346,11 @@ export class GameState {
   /** Último lado horizontal claro para o qual a unidade caminhou na tela. */
   unitFacing(u: UnitSnap): 1 | -1 | undefined {
     return this.unitFacings.get(u.id);
+  }
+
+  /** Direção de movimento do barco (vetor no mundo; mantida quando ele para). */
+  boatFacing(u: UnitSnap): { x: number; y: number } | undefined {
+    return this.boatFacingDirs.get(u.id);
   }
 
   /** Posição interpolada de uma ovelha (parada na Fase 1; anda na Fase 2). */
@@ -501,7 +518,7 @@ export class GameState {
       }
     }
 
-    const N_H: Record<NodeType, number> = { tree: 1.9, berry_bush: 0.4, gold_mine: 0.9, stone_mine: 0.9 };
+    const N_H: Record<NodeType, number> = { tree: 1.9, berry_bush: 0.4, gold_mine: 0.9, stone_mine: 0.9, fish: 0.5 };
     for (const n of this.nodes.values()) {
       if (!this.nodeVisible(n)) continue; // ainda não explorado
       if (diagHit(n.tileX, n.tileY, n.tileX + 1, n.tileY + 1, N_H[n.type] ?? 0.5)) {
@@ -537,10 +554,29 @@ export class GameState {
     const s = def.size;
     const mapSize = this.map.size;
     if (tileX < 0 || tileY < 0 || tileX + s > mapSize || tileY + s > mapSize) return false;
-    for (let ty = tileY; ty < tileY + s; ty++) {
-      for (let tx = tileX; tx < tileX + s; tx++) {
-        if (this.tileAt(tx, ty) !== TILE_GRASS) return false;
-        if (!this.fog.isExplored(tx, ty)) return false;
+    if (type === 'dock') {
+      // Porto: TODO o footprint em água FUNDA explorada + encostado na costa
+      // (>=1 vizinho de terra/raso). O servidor valida a mesma regra.
+      let coast = false;
+      for (let ty = tileY - 1; ty <= tileY + s; ty++) {
+        for (let tx = tileX - 1; tx <= tileX + s; tx++) {
+          const inside = tx >= tileX && tx < tileX + s && ty >= tileY && ty < tileY + s;
+          const t = this.tileAt(tx, ty);
+          if (inside) {
+            if (t !== TILE_WATER) return false;
+            if (!this.fog.isExplored(tx, ty)) return false;
+          } else if (t !== TILE_WATER && t !== -1) {
+            coast = true;
+          }
+        }
+      }
+      if (!coast) return false;
+    } else {
+      for (let ty = tileY; ty < tileY + s; ty++) {
+        for (let tx = tileX; tx < tileX + s; tx++) {
+          if (this.tileAt(tx, ty) !== TILE_GRASS) return false;
+          if (!this.fog.isExplored(tx, ty)) return false;
+        }
       }
     }
     for (const b of this.buildings.values()) {

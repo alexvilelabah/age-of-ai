@@ -11,9 +11,10 @@ import {
   SHEEP_SCATTER_PER_CLUSTER,
   START_VILLAGERS,
   TILE_GRASS,
+  TILE_SHALLOW,
   TILE_WATER,
 } from '@age/shared';
-import type { NodeType } from '@age/shared';
+import type { NodeType, TerrainKind } from '@age/shared';
 import { idx, inBounds, nearestWalkableTile, type Grid } from './path';
 import type { Building, ResNode, Sheep, Unit } from './state';
 import { createSheep, createUnit } from './state';
@@ -42,7 +43,9 @@ interface GenResult {
 const CORNER_INSET = 9;
 
 function cornerFor(size: number, i: number): { x: number; y: number } {
-  // 0: topo-esq, 1: topo-dir, 2: baixo-dir, 3: baixo-esq
+  // 0: topo-esq, 1: topo-dir, 2: baixo-dir, 3: baixo-esq (perímetro, horário).
+  // No minimapa (losango, girado 45°) esses cantos viram os VÉRTICES:
+  // 0 -> topo, 1 -> direita, 2 -> baixo, 3 -> esquerda.
   const lo = CORNER_INSET;
   const hi = size - 1 - CORNER_INSET;
   switch (i % 4) {
@@ -57,15 +60,26 @@ function cornerFor(size: number, i: number): { x: number; y: number } {
   }
 }
 
+/** Quais cantos usar por nº de jogadores, pra MAXIMIZAR a distância entre inimigos
+ *  (convenção de RTS: no 1v1 os jogadores ficam em cantos OPOSTOS, nunca vizinhos).
+ *  Antes o 1v1 pegava os cantos 0 e 1 = topo-esq e topo-dir (colados; no minimapa
+ *  davam topo + direita). Agora pega 0 e 2 = topo-esq e baixo-dir (diagonal; no
+ *  minimapa dão topo + baixo, os vértices opostos). 3 e 4 jogadores usam os cantos
+ *  na ordem do perímetro (3 = um canto vazio; 4 = os quatro). */
+function spawnCornerOrder(playerCount: number): number[] {
+  if (playerCount === 2) return [0, 2];
+  return [0, 1, 2, 3];
+}
+
 function dist(ax: number, ay: number, bx: number, by: number): number {
   return Math.hypot(ax - bx, ay - by);
 }
 
-export function generateMap(playerCount: number, forcedSeed?: number): GenResult {
+export function generateMap(playerCount: number, forcedSeed?: number, terrain: TerrainKind = 'classic'): GenResult {
   const maxAttempts = 20;
   let seed = forcedSeed ?? Math.floor(Math.random() * 0xffffffff);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const result = tryGenerate(playerCount, seed);
+    const result = tryGenerate(playerCount, seed, false, terrain);
     if (result) {
       console.log(`[mapgen] seed=${seed} attempt=${attempt + 1} OK`);
       return result;
@@ -75,34 +89,41 @@ export function generateMap(playerCount: number, forcedSeed?: number): GenResult
   }
   // Última tentativa: gera mesmo assim e depois carve caminhos retos entre spawns.
   console.log(`[mapgen] esgotadas ${maxAttempts} tentativas — forçando geração com carve de caminhos`);
-  const forced = tryGenerate(playerCount, seed, true);
+  const forced = tryGenerate(playerCount, seed, true, terrain);
   if (!forced) throw new Error('mapgen: falha irrecuperável');
   return forced;
 }
 
-function tryGenerate(playerCount: number, seed: number, forceCarve = false): GenResult | null {
+function tryGenerate(playerCount: number, seed: number, forceCarve = false, terrain: TerrainKind = 'classic'): GenResult | null {
   const size = MAP_SIZE;
   const rng = mulberry32(seed);
   const tiles = new Array<number>(size * size).fill(TILE_GRASS);
   const blocked = new Uint8Array(size * size);
 
   const spawns: { x: number; y: number }[] = [];
-  for (let i = 0; i < playerCount; i++) spawns.push(cornerFor(size, i));
+  const cornerOrder = spawnCornerOrder(playerCount);
+  for (let i = 0; i < playerCount; i++) spawns.push(cornerFor(size, cornerOrder[i]));
 
-  // --- Lagos (evitar perto de spawns) ---
-  const lakeCount = 2 + Math.floor(rng() * 2); // 2..3
-  for (let l = 0; l < lakeCount; l++) {
-    let cx = 0;
-    let cy = 0;
-    let ok = false;
-    for (let tries = 0; tries < 50 && !ok; tries++) {
-      cx = Math.floor(rng() * size);
-      cy = Math.floor(rng() * size);
-      ok = spawns.every((s) => dist(cx, cy, s.x, s.y) > 12);
+  if (terrain === 'river' || terrain === 'strait') {
+    // RIO cruzando o mapa. 'river' tem VAUS (banco de areia, travessia a pé);
+    // 'strait' NÃO tem vau e é sempre VERTICAL (divide os cantos — só cruza de barco).
+    carveRiver(tiles, size, rng, terrain === 'river', terrain === 'strait');
+  } else {
+    // --- Lagos (evitar perto de spawns) ---
+    const lakeCount = 2 + Math.floor(rng() * 2); // 2..3
+    for (let l = 0; l < lakeCount; l++) {
+      let cx = 0;
+      let cy = 0;
+      let ok = false;
+      for (let tries = 0; tries < 50 && !ok; tries++) {
+        cx = Math.floor(rng() * size);
+        cy = Math.floor(rng() * size);
+        ok = spawns.every((s) => dist(cx, cy, s.x, s.y) > 12);
+      }
+      if (!ok) continue;
+      const lakeSize = 10 + Math.floor(rng() * 16); // 10..25
+      blobify(tiles, size, cx, cy, lakeSize, TILE_WATER, rng);
     }
-    if (!ok) continue;
-    const lakeSize = 10 + Math.floor(rng() * 16); // 10..25
-    blobify(tiles, size, cx, cy, lakeSize, TILE_WATER, rng);
   }
 
   const nextIdBox = { v: 1 };
@@ -165,19 +186,25 @@ function tryGenerate(playerCount: number, seed: number, forceCarve = false): Gen
       units.push(u);
     }
 
-    // Clusters de recursos a 5-9 tiles do spawn, em direções variadas.
-    const clusterSpecs: { type: NodeType; count: number }[] = [
-      { type: 'berry_bush', count: 6 },
-      { type: 'tree', count: 14 },
-      { type: 'gold_mine', count: 4 },
-      { type: 'stone_mine', count: 4 },
+    // Clusters de recursos ao redor do spawn, com DIREÇÃO, DISTÂNCIA e QUANTIDADE
+    // variadas por partida (dá sensação de "mapa novo" toda vez). Comida e madeira
+    // ficam mais perto (uso imediato); ouro e pedra podem vir de mais longe e variam
+    // mais (às vezes a pedra tá logo ali, às vezes lá longe). Médias iguais às antigas
+    // (6 fruta / 14 árvore / 4 ouro / 4 pedra) pra não mexer no equilíbrio econômico.
+    const clusterSpecs: { type: NodeType; count: number; near: number; far: number }[] = [
+      { type: 'berry_bush', count: 5 + Math.floor(rng() * 3), near: 4, far: 7 }, // 5..7
+      { type: 'tree', count: 12 + Math.floor(rng() * 5), near: 4, far: 8 }, // 12..16
+      { type: 'gold_mine', count: 3 + Math.floor(rng() * 3), near: 6, far: 12 }, // 3..5
+      { type: 'stone_mine', count: 3 + Math.floor(rng() * 3), near: 6, far: 12 }, // 3..5
     ];
     const angleBase = rng() * Math.PI * 2;
     clusterSpecs.forEach((spec, ci) => {
-      const angle = angleBase + (ci * Math.PI * 2) / clusterSpecs.length + (rng() - 0.5) * 0.5;
-      const dist2 = 5 + rng() * 4; // 5..9
-      const centerX = Math.round(s.x + Math.cos(angle) * dist2);
-      const centerY = Math.round(s.y + Math.sin(angle) * dist2);
+      // base espaçada (evita amontoar) + jitter grande (direções bem diferentes).
+      const angle = angleBase + (ci * Math.PI * 2) / clusterSpecs.length + (rng() - 0.5) * 1.0;
+      const dist2 = spec.near + rng() * (spec.far - spec.near);
+      // clamp mantém o centro no mapa (spawn de canto + distância grande não cai fora).
+      const centerX = Math.max(6, Math.min(size - 6, Math.round(s.x + Math.cos(angle) * dist2)));
+      const centerY = Math.max(6, Math.min(size - 6, Math.round(s.y + Math.sin(angle) * dist2)));
       placeClusterNodes(spec.type, spec.count, centerX, centerY, size, rng, placeNode);
     });
   }
@@ -197,6 +224,28 @@ function tryGenerate(playerCount: number, seed: number, forceCarve = false): Gen
   for (let i = 0; i < stoneClusters; i++) {
     const c = randomFarPoint(rng, size, spawns, 10);
     placeClusterNodes('stone_mine', 3, c.x, c.y, size, rng, placeNode);
+  }
+
+  // ÁGUA FUNDA bloqueia unidades TERRESTRES (o raso/vau é passável). Isto também
+  // conserta um bug antigo: a água nunca entrava no `blocked`, então dava pra
+  // andar por cima de lago. Vem DEPOIS de toda a pintura de terreno (o anel de
+  // grama forçada dos TCs já rodou) e é aditivo aos bloqueios de prédio/nó.
+  for (let i = 0; i < tiles.length; i++) {
+    if (tiles[i] === TILE_WATER) blocked[i] = 1;
+  }
+
+  // --- Bancos de peixe (mapas com rio): em água FUNDA, espaçados entre si ---
+  if (terrain === 'river' || terrain === 'strait') {
+    let placedFish = 0;
+    let guard = 0;
+    while (placedFish < 11 && guard++ < 900) {
+      const x = 3 + Math.floor(rng() * (size - 6));
+      const y = 3 + Math.floor(rng() * (size - 6));
+      if (tiles[idx(x, y, size)] !== TILE_WATER) continue;
+      if (nodes.some((n) => n.type === 'fish' && dist(x, y, n.tileX, n.tileY) < 6)) continue;
+      nodes.push({ id: nextIdBox.v++, type: 'fish', tileX: x, tileY: y, amount: NODE_DEFS.fish.amount });
+      placedFish++;
+    }
   }
 
   const grid: Grid = { size, tiles, blocked };
@@ -239,13 +288,61 @@ function tryGenerate(playerCount: number, seed: number, forceCarve = false): Gen
     .filter((b) => b.type === 'town_center')
     .map((b) => nearestWalkableTile(grid, b.tileX + 1, b.tileY + 1) ?? { x: b.tileX + 1, y: b.tileY + 1 });
 
-  if (!forceCarve) {
-    if (!allMutuallyReachable(grid, tcCenters)) return null;
-  } else {
-    carveStraightPaths(grid, tcCenters);
+  // 'strait' (Travessia) divide o mapa em duas terras de propósito: NÃO exigimos
+  // travessia terrestre nem abrimos corredor (senão viraria ponte de terra). A
+  // conectividade dentro de cada margem é natural (grama aberta). Cruzar só de barco.
+  if (terrain !== 'strait') {
+    if (!forceCarve) {
+      if (!allMutuallyReachable(grid, tcCenters)) return null;
+    } else {
+      carveStraightPaths(grid, tcCenters);
+    }
   }
 
   return { grid, units, buildings, nodes, sheep, nextId: nextIdBox.v, seed };
+}
+
+/** Rio de borda a borda, serpenteando. Largura ~8-11, amplitude ~6-13, sempre
+ *  longe dos cantos (spawns ficam a ~9 tiles das bordas).
+ *  - `withFords`: cria 2 VAUS rasos (TILE_SHALLOW) — a travessia a pé que mantém
+ *    o mapa conectado (mapa Rio; bots funcionais sem IA naval).
+ *  - `forceVertical`: fixa o rio na VERTICAL (separa esquerda/direita), garantindo
+ *    que os cantos-spawn caiam em margens opostas (mapa Travessia, sem vau). */
+function carveRiver(
+  tiles: number[],
+  size: number,
+  rng: () => number,
+  withFords: boolean,
+  forceVertical: boolean,
+): void {
+  const vertical = forceVertical ? true : rng() < 0.5; // separa esq/dir (true) ou cima/baixo
+  const half = size / 2;
+  const amp = 6 + rng() * 7;
+  const phase = rng() * Math.PI * 2;
+  const waves = 1.2 + rng() * 1.3; // quantas curvas o rio faz
+  const width = 8 + rng() * 3; // 8..11 (mais largo — pedido do usuário)
+  for (let t = 0; t < size; t++) {
+    const center = half + Math.sin(phase + (t / size) * Math.PI * 2 * waves) * amp;
+    const hw = width / 2 + (rng() - 0.5) * 0.8; // borda irregular
+    for (let o = -Math.ceil(width); o <= Math.ceil(width); o++) {
+      if (Math.abs(o) > hw) continue;
+      const c = Math.round(center) + o;
+      if (c < 1 || c >= size - 1) continue;
+      tiles[vertical ? idx(c, t, size) : idx(t, c, size)] = TILE_WATER;
+    }
+  }
+  if (!withFords) return; // Travessia: água de margem a margem, só cruza de barco.
+  // Vaus: faixas rasas cruzando o rio em ~30% e ~70% do comprimento.
+  for (const frac of [0.26 + rng() * 0.1, 0.62 + rng() * 0.1]) {
+    const t0 = Math.floor(size * frac);
+    for (let t = t0 - 2; t <= t0 + 2; t++) {
+      if (t < 0 || t >= size) continue;
+      for (let c = 0; c < size; c++) {
+        const i = vertical ? idx(c, t, size) : idx(t, c, size);
+        if (tiles[i] === TILE_WATER) tiles[i] = TILE_SHALLOW;
+      }
+    }
+  }
 }
 
 function ringSpots(tcX: number, tcY: number, size: number, mapSize: number): { x: number; y: number }[] {
