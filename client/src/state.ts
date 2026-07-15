@@ -57,6 +57,28 @@ export function unitRadius(type: UnitType): number {
   return 0.35;
 }
 
+/** Altura VISUAL do prédio em unidades de diagonal (k) — até onde ele "come" o
+ *  clique. TEM que caber dentro do sprite: pra prédio com PNG a altura real é
+ *  `2*size*fit.scale*(imgH*(1-cropBottom)/imgW) - size` (ver buildingSpriteBox
+ *  no renderer).
+ *
+ *  A DIREÇÃO DO ERRO IMPORTA. Baixo demais é inofensivo: só não dá pra clicar na
+ *  parte de cima do prédio. ALTO demais é o veneno — o prédio engole o clique de
+ *  árvore/mina que aparece ATRÁS e ACIMA dele, dá pra ver e não dá pra clicar.
+ *  Foi assim que o Centro (3.2 cravado da época do desenho procedural, quando a
+ *  altura real era 1.15) enfiava o aldeão dentro de casa em vez de mandar cortar
+ *  lenha. `scripts/sprite_height_test.ts` trava esse lado: mede o PNG e reprova
+ *  qualquer valor MAIOR que o sprite. Na dúvida, BAIXE o número. */
+export const B_H: Partial<Record<BuildingType, number>> = { farm: 0.2, house: 1.7, town_center: 1.2, wall: 0.9, watch_tower: 3.4, market: 2.0, mill: 1.6, lumber_camp: 1.4, mining_camp: 1.4 };
+
+/** Margem MORTA na borda do prédio, em tiles (a caixa de clique encolhe por
+ *  todos os lados). Só o CENTRO usa: ele é grande (3x3), fica no meio da base
+ *  cercado de árvore/mina, e clicar de raspão nele fazia o aldeão entrar sem
+ *  querer. Com 0.25 de margem o alvo vira 2.5x2.5 (~30% menos área) e o clique
+ *  de raspão "vaza" pra árvore atrás em vez de pegar o prédio. Ainda dá pra
+ *  clicar no Centro à vontade — só não na casquinha da borda. */
+export const B_INSET: Partial<Record<BuildingType, number>> = { town_center: 0.25 };
+
 export class GameState {
   readonly map: MapData;
   readonly players: PlayerInfo[];
@@ -505,23 +527,6 @@ export class GameState {
       return lo <= hi;
     };
 
-    // Altura VISUAL do prédio em unidades de diagonal (k) — até onde o sprite
-    // cobre o clique. TEM que bater com o desenho: pra prédio com PNG a conta é
-    // `2*size*fit.scale*(imgH/imgW) - size` (ver drawBuildingSprite no renderer).
-    // Estes números são da época do desenho PROCEDURAL e ficaram defasados quando
-    // entraram os sprites. O Centro estava em 3.2 sendo que o telhado dele sobe só
-    // ~1.15 (PNG 467x323, size 3, scale 1.0): ele COMIA o clique de árvore/mina
-    // que ficavam VISÍVEIS acima do telhado — dava pra ver e não dava pra clicar.
-    // Os demais erram pro lado inofensivo (assumem MENOS que o sprite: dá pra
-    // clicar só a parte de baixo do prédio), então ficam como estão por ora.
-    const B_H: Partial<Record<BuildingType, number>> = { farm: 0.2, house: 1.7, town_center: 1.2, wall: 0.9, watch_tower: 3.4, market: 2.0, mill: 1.6, lumber_camp: 1.4, mining_camp: 1.4 };
-    // Margem MORTA na borda do prédio, em tiles (a caixa de clique encolhe por
-    // todos os lados). Só o CENTRO usa: ele é grande (3x3), fica no meio da base
-    // cercado de árvore/mina, e clicar de raspão nele fazia o aldeão entrar sem
-    // querer. Com 0.25 de margem o alvo vira 2.5x2.5 (~30% menos área) e o clique
-    // de raspão "vaza" pra árvore atrás em vez de pegar o prédio. Ainda dá pra
-    // clicar no Centro à vontade — só não na casquinha da borda.
-    const B_INSET: Partial<Record<BuildingType, number>> = { town_center: 0.25 };
     for (const b of this.buildings.values()) {
       const size = BUILDING_DEFS[b.type]?.size ?? 1;
       // Inimigo só é SELECIONÁVEL com o tile à vista (o "lembrado" na névoa

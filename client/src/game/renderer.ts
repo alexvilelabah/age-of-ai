@@ -2013,6 +2013,51 @@ export class Renderer {
     return peak.y - th * 0.5;
   }
 
+  /** Retângulo que o sprite do prédio ocupa na tela — FONTE ÚNICA da altura
+   *  visual. Quem pendura coisa no alto (barra de vida, flecha, escudinho) tem
+   *  que perguntar AQUI, nunca cravar um número: foi um `hh*3.2` chumbado (a
+   *  altura da torre PROCEDURAL, de antes dos PNGs) que deixou a flecha saindo
+   *  do pé da torre em vez da plataforma. Número visual cravado apodrece calado
+   *  quando a arte muda.
+   *
+   *  Prédio alto demais se resolve pelo `fit.scale` (encolhe inteiro, mantendo a
+   *  forma) — NÃO cortando a imagem: o corte deixa a borda de baixo RETA, e no
+   *  isométrico a base é um LOSANGO, então o prédio fica parecendo torto. */
+  private buildingSpriteBox(
+    px: (x: number, y: number) => number,
+    py: (x: number, y: number) => number,
+    hh: number,
+    b: BuildingSnap,
+    s: number,
+    img: HTMLImageElement,
+    fit: SpriteFit,
+  ): { cx: number; baseY: number; topY: number; drawW: number; drawH: number } {
+    const hw = 2 * hh; // ISO_HW = 2 * ISO_HH
+    const groundW = 2 * s * hw; // largura do losango do footprint em px
+    const drawW = groundW * fit.scale;
+    const drawH = drawW * (img.height / img.width);
+    const cx = px(b.tileX + s / 2, b.tileY + s / 2);
+    const baseY = py(b.tileX + s, b.tileY + s) + hh * fit.dropY; // canto frontal + ajuste
+    return { cx, baseY, topY: baseY - drawH, drawW, drawH };
+  }
+
+  /** Caixa do sprite de um prédio PRONTO, ou `null` quando ele não está sendo
+   *  desenhado por PNG — em obra (mostra o andaime procedural) ou sem arte.
+   *  Use nos passes de FX que precisam do alto do prédio, pra não recravar
+   *  altura. `null` => o chamador cai no número calibrado pra arte procedural. */
+  private builtSpriteBox(
+    px: (x: number, y: number) => number,
+    py: (x: number, y: number) => number,
+    hh: number,
+    b: BuildingSnap,
+  ): { cx: number; baseY: number; topY: number; drawW: number; drawH: number } | null {
+    if ((b.progress ?? 1) < 1) return null;
+    const s = BUILDING_DEFS[b.type]?.size ?? 1;
+    const age = Math.min(4, Math.max(1, this.gs.playerSnaps.get(b.owner)?.age ?? 1));
+    const spr = this.sprites.get(b.type, age);
+    return spr ? this.buildingSpriteBox(px, py, hh, b, s, spr.img, spr.fit) : null;
+  }
+
   /** Desenha um PNG de prédio ancorado no tile: base no canto frontal do
    *  footprint, centrado; largura = losango × fit.scale. Retorna o topo (px)
    *  aproximado para a barra de vida. */
@@ -2026,17 +2071,12 @@ export class Renderer {
     img: HTMLImageElement,
     fit: SpriteFit,
   ): number {
-    const hw = 2 * hh; // ISO_HW = 2 * ISO_HH
-    const groundW = 2 * s * hw; // largura do losango do footprint em px
-    const drawW = groundW * fit.scale;
-    const drawH = drawW * (img.height / img.width);
-    const cx = px(b.tileX + s / 2, b.tileY + s / 2);
-    const baseY = py(b.tileX + s, b.tileY + s) + hh * fit.dropY; // canto frontal + ajuste
+    const { cx, topY, drawW, drawH } = this.buildingSpriteBox(px, py, hh, b, s, img, fit);
     const prevSmooth = ctx.imageSmoothingEnabled;
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(img, cx - drawW / 2, baseY - drawH, drawW, drawH);
+    ctx.drawImage(img, cx - drawW / 2, topY, drawW, drawH);
     ctx.imageSmoothingEnabled = prevSmooth;
-    return baseY - drawH;
+    return topY;
   }
 
   private drawBuilding(
@@ -2317,8 +2357,15 @@ export class Renderer {
       const size = BUILDING_DEFS[b.type]?.size ?? 1;
       if (!fogVis(b.tileX + size / 2, b.tileY + size / 2) && !fogVis(tp.x, tp.y)) continue;
       const ax = px(b.tileX + size / 2, b.tileY + size / 2);
-      // topo do prédio (o Centro da Cidade é bem maior que a torre)
-      const ay = py(b.tileX + size / 2, b.tileY + size / 2) - hh * (b.type === 'town_center' ? 3.6 : 3.2);
+      // A flecha sai da PLATAFORMA — logo abaixo do telhado, que come uns 20% do
+      // alto da arte — e não do bico do telhado. Medido DO SPRITE: o número que
+      // estava cravado aqui (hh*3.2) era a altura da torre PROCEDURAL e nunca
+      // acompanhou os PNGs; a flecha nascia a ~28% da torre, quase no chão.
+      // Sem sprite (prédio em obra) é a arte procedural mesmo => número antigo.
+      const box = this.builtSpriteBox(px, py, hh, b);
+      const ay = box
+        ? box.topY + box.drawH * 0.2
+        : py(b.tileX + size / 2, b.tileY + size / 2) - hh * (b.type === 'town_center' ? 3.6 : 3.2);
       const cd = def.cooldown * 1000;
       const arrows = 1 + (b.garrison ?? 0);
       for (let k = 0; k < arrows; k++) {
@@ -2335,7 +2382,12 @@ export class Renderer {
       const size = BUILDING_DEFS[b.type]?.size ?? 1;
       if (!fogVis(b.tileX + size / 2, b.tileY + size / 2)) continue;
       const bx = px(b.tileX + size / 2, b.tileY + size / 2);
-      const by = py(b.tileX + size / 2, b.tileY + size / 2) - hh * (b.type === 'town_center' ? 3.3 : 2.9);
+      // Logo acima do topo REAL do sprite (mesma história da flecha: o número
+      // cravado era da arte procedural). Sem sprite => número antigo.
+      const box = this.builtSpriteBox(px, py, hh, b);
+      const by = box
+        ? box.topY - hh * 0.7
+        : py(b.tileX + size / 2, b.tileY + size / 2) - hh * (b.type === 'town_center' ? 3.3 : 2.9);
       ctx.fillStyle = 'rgba(20,16,10,0.82)';
       ctx.beginPath();
       ctx.arc(bx, by, Math.max(7, hh * 0.55), 0, Math.PI * 2);

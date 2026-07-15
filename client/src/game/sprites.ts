@@ -24,8 +24,21 @@ export interface SpriteFit {
   dropY: number;
 }
 
-const BUILDING_SPRITES: Partial<Record<BuildingType, SpriteFit>> = {
-  watch_tower: { file: 'watch_tower.png', scale: 1.25, dropY: 0.4 },
+/** Exportada pro `scripts/sprite_height_test.ts` conferir contra os PNGs de
+ *  verdade que nenhuma caixa de clique passou da altura do sprite. */
+export const BUILDING_SPRITES: Partial<Record<BuildingType, SpriteFit>> = {
+  // TORRE: a arte é altíssima (PNG ~276×890 => razão 3.2). Sendo 1×1, a 1.25 ela
+  // desenhava 8.1 alturas de tile — o DOBRO do Centro da Cidade, que é 3×3 e
+  // desenha 4.15. Ficava um espeto no meio da base. 0.9375 = 1.25 × 0.75, ou seja
+  // 25% menor MANTENDO A FORMA.
+  //
+  // Já tentamos cortar o pé da imagem (era mais tentador: encurtava sem afinar).
+  // Não presta: o corte é uma linha RETA e horizontal, mas no isométrico a base
+  // do prédio é um LOSANGO — a quina da frente desce mais que os lados. A torre
+  // ficava com a borda de baixo reta, parecendo torta/enfiada no chão, enquanto
+  // o vizinho tinha base com profundidade. Encolher preserva a base que o
+  // desenhista já fez na perspectiva certa. Não voltar pro corte.
+  watch_tower: { file: 'watch_tower.png', scale: 0.9375, dropY: 0.4 },
   market: { file: 'market.png', scale: 1.15, dropY: 0.3 },
   house: { file: 'house.png', scale: 1.3, dropY: 0.28 },
   stable: { file: 'stable.png', scale: 1.1, dropY: 0.3 },
