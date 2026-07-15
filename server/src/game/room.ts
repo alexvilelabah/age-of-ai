@@ -746,11 +746,6 @@ export class Game {
       if (b.owner !== playerId || b.progress < 1 || !GARRISON_CAP[b.type]) return;
       for (const u of this.ownedUnits(playerId, unitIds)) {
         if (isNavalUnit(u.type)) continue; // barco não entra em prédio
-        // Aldeão NÃO guarnece prédio: o clique numa árvore perto do Centro era
-        // roubado pelo sprite alto dele e o aldeão sumia lá dentro em vez de
-        // cortar. (Aldeão embarcando em TRANSPORTE segue valendo — é o outro
-        // ramo, abaixo, e ele precisa disso pra cruzar o rio.)
-        if (u.type === 'villager') continue;
         this.clearTasks(u);
         u.garrisonTargetId = targetId;
         if (this.pathUnitAdjacentTo(u, b.tileX, b.tileY, BUILDING_DEFS[b.type].size)) {
@@ -1414,15 +1409,24 @@ export class Game {
     return null;
   }
 
+  /** Distância da unidade até o alvo. Pra PRÉDIO é a distância até a BORDA do
+   *  footprint (retângulo `[tileX..tileX+size] x [tileY..tileY+size]`), porque o
+   *  prédio é sólido: a unidade só consegue encostar POR FORA.
+   *
+   *  Estava errado: clampava `u.x/u.y` (float) no intervalo dos ÍNDICES de tile e
+   *  depois somava 0.5 como se o resultado fosse índice — apontava pro tile errado
+   *  e inflava a distância (~1.4 onde a parede está a 0.8). Como o espadachim tem
+   *  alcance 1, ele NUNCA alcançava: ficava "indo atacar" eternamente sem bater no
+   *  prédio inimigo. */
   private distToTarget(u: Unit, targetId: number): number {
     const tu = this.units.get(targetId);
     if (tu) return Math.hypot(tu.x - u.x, tu.y - u.y);
     const b = this.buildings.get(targetId);
     if (b) {
       const size = BUILDING_DEFS[b.type].size;
-      const nx = Math.max(b.tileX, Math.min(u.x, b.tileX + size - 1));
-      const ny = Math.max(b.tileY, Math.min(u.y, b.tileY + size - 1));
-      return Math.hypot(nx + 0.5 - u.x, ny + 0.5 - u.y);
+      const nx = Math.max(b.tileX, Math.min(u.x, b.tileX + size));
+      const ny = Math.max(b.tileY, Math.min(u.y, b.tileY + size));
+      return Math.hypot(nx - u.x, ny - u.y);
     }
     return Infinity;
   }

@@ -515,6 +515,13 @@ export class GameState {
     // Os demais erram pro lado inofensivo (assumem MENOS que o sprite: dá pra
     // clicar só a parte de baixo do prédio), então ficam como estão por ora.
     const B_H: Partial<Record<BuildingType, number>> = { farm: 0.2, house: 1.7, town_center: 1.2, wall: 0.9, watch_tower: 3.4, market: 2.0, mill: 1.6, lumber_camp: 1.4, mining_camp: 1.4 };
+    // Margem MORTA na borda do prédio, em tiles (a caixa de clique encolhe por
+    // todos os lados). Só o CENTRO usa: ele é grande (3x3), fica no meio da base
+    // cercado de árvore/mina, e clicar de raspão nele fazia o aldeão entrar sem
+    // querer. Com 0.25 de margem o alvo vira 2.5x2.5 (~30% menos área) e o clique
+    // de raspão "vaza" pra árvore atrás em vez de pegar o prédio. Ainda dá pra
+    // clicar no Centro à vontade — só não na casquinha da borda.
+    const B_INSET: Partial<Record<BuildingType, number>> = { town_center: 0.25 };
     for (const b of this.buildings.values()) {
       const size = BUILDING_DEFS[b.type]?.size ?? 1;
       // Inimigo só é SELECIONÁVEL com o tile à vista (o "lembrado" na névoa
@@ -522,7 +529,8 @@ export class GameState {
       // também é assim). Meus/aliados sempre.
       if (!this.alliedOwners.has(b.owner) &&
           !this.fog.isVisible(Math.floor(b.tileX + size / 2), Math.floor(b.tileY + size / 2))) continue;
-      if (diagHit(b.tileX, b.tileY, b.tileX + size, b.tileY + size, B_H[b.type] ?? 2.5)) {
+      const ins = B_INSET[b.type] ?? 0;
+      if (diagHit(b.tileX + ins, b.tileY + ins, b.tileX + size - ins, b.tileY + size - ins, B_H[b.type] ?? 2.5)) {
         return { kind: 'building', building: b };
       }
     }

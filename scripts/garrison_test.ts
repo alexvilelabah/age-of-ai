@@ -1,8 +1,14 @@
-// Teste headless do GUARNECER: o ALDEÃO não entra em prédio (Centro/torre).
-// Motivo: o sprite do Centro é alto e o pickAt do cliente testa prédio ANTES de
-// árvore, então mandar o aldeão cortar uma árvore perto do Centro roubava o
-// clique e enfiava ele lá dentro. Tropa continua guarnecendo, e o aldeão
-// CONTINUA podendo embarcar no transporte (é outro ramo — vital no mapa Travessia).
+// Teste headless do GUARNECER: unidades entram em Centro/Torre próprios (ficam
+// protegidas e o prédio atira +1 flecha por unidade dentro) — INCLUSIVE o aldeão,
+// que é como se esconde a economia num ataque.
+//
+// Histórico (pra não regredir de novo): o aldeão chegou a ser BLOQUEADO como
+// contorno, porque clicar numa árvore perto do Centro o enfiava lá dentro. A causa
+// real era outra — a altura visual do Centro no clique (B_H em client/src/state.ts)
+// estava 3.2 sendo que o telhado sobe ~1.15, então o prédio comia o clique de quem
+// estava VISÍVEL acima dele. Corrigida a altura, o bloqueio virou desnecessário e
+// o recurso voltou.
+//
 // Roda: npx tsx scripts/garrison_test.ts
 import { Game } from '../server/src/game/room.ts';
 
@@ -32,37 +38,50 @@ const mkUnit = (id: number, type: string): any => {
   g.units.set(id, u);
   return u;
 };
+/** Aceitou o comando? (mira o alvo, ou já entrou na hora se estava colado) */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const entrou = (u: any, b: any): boolean =>
+  u.garrisonTargetId === b.id || (b.garrison?.some((x: { id: number }) => x.id === u.id) ?? false);
 
-// --- ALDEÃO não entra no Centro ---
+// --- ALDEÃO entra no Centro (o recurso que voltou) ---
 const vil = mkUnit(1, 'villager');
 g.cmdGarrison(1, [1], tc.id);
-check('aldeão NÃO some do mapa ao clicar no Centro', g.units.has(1));
-check('aldeão não fica mirando o Centro (sem garrisonTargetId)', vil.garrisonTargetId === undefined);
-check('aldeão não entra em movingToGarrison', vil.state !== 'movingToGarrison');
-check('Centro fica sem ninguém dentro', (tc.garrison?.length ?? 0) === 0);
+check('aldeão GUARNECE o Centro', entrou(vil, tc));
 
-// --- ALDEÃO também não entra na Torre ---
+// --- ALDEÃO entra na Torre ---
 const vil2 = mkUnit(2, 'villager');
 g.cmdGarrison(1, [2], tower.id);
-check('aldeão NÃO guarnece a Torre', vil2.garrisonTargetId === undefined && (tower.garrison?.length ?? 0) === 0);
+check('aldeão GUARNECE a Torre', entrou(vil2, tower));
 
-// --- TROPA continua guarnecendo ---
+// --- TROPA entra ---
 const sw = mkUnit(3, 'swordsman');
 g.cmdGarrison(1, [3], tc.id);
-check('tropa AINDA guarnece o Centro', sw.garrisonTargetId === tc.id || (tc.garrison?.length ?? 0) > 0);
+check('tropa guarnece o Centro', entrou(sw, tc));
 
-// --- seleção MISTA: só a tropa entra, o aldeão fica de fora ---
+// --- seleção MISTA: TODOS entram ---
 const vil3 = mkUnit(4, 'villager');
-const sw2 = mkUnit(5, 'archer');
+const ar = mkUnit(5, 'archer');
 g.cmdGarrison(1, [4, 5], tower.id);
-check('mista: tropa entra e aldeão fica fora', vil3.garrisonTargetId === undefined && sw2.garrisonTargetId === tower.id);
+check('mista: aldeão E tropa entram', entrou(vil3, tower) && entrou(ar, tower));
+
+// --- BARCO não entra em prédio ---
+const boat2 = mkUnit(7, 'war_galley');
+g.cmdGarrison(1, [7], tc.id);
+check('barco NÃO entra em prédio', !entrou(boat2, tc));
+
+// --- prédio de OUTRO dono não aceita ---
+const inimigo = { id: 902, owner: 2, type: 'town_center', tileX: 60, tileY: 60, hp: 999, progress: 1, queue: [] };
+g.buildings.set(inimigo.id, inimigo);
+const vil5 = mkUnit(8, 'villager');
+g.cmdGarrison(1, [8], inimigo.id);
+check('não guarnece prédio inimigo', !entrou(vil5, inimigo));
 
 // --- NÃO regrediu: aldeão ainda EMBARCA no transporte (cruzar o rio) ---
 const boat = { id: 800, owner: 1, type: 'transport', x: 21, y: 21, hp: 100, state: 'idle', path: [], cargo: [] };
 g.units.set(boat.id, boat);
 const vil4 = mkUnit(6, 'villager');
 g.cmdGarrison(1, [6], boat.id);
-check('aldeão AINDA pode embarcar no transporte', vil4.garrisonTargetId === boat.id);
+check('aldeão AINDA embarca no transporte', vil4.garrisonTargetId === boat.id);
 
 console.log(fail === 0 ? `\nTODOS OS ${pass} TESTES DE GUARNECER PASSARAM` : `\n${fail} FALHA(S)`);
 process.exit(fail === 0 ? 0 : 1);

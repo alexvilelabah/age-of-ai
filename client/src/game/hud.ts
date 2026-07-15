@@ -62,7 +62,7 @@ export interface HudDeps {
   onChat: (text: string) => void;
   onIdleVillager: () => void;
   /** Desembarcar o transporte selecionado (id do barco). */
-  onUnload: (transportId: number) => void;
+  onUnload: (id: number) => void; // id do PRÉDIO guarnecido ou do barco de transporte
   getPlacement: () => BuildingType | null;
 }
 
@@ -321,7 +321,10 @@ export class Hud {
     if (units.length === 1) {
       const u = units[0];
       const techSig = gs.playerSnaps.get(u.owner)?.techs?.join(',') ?? '';
-      sig = `u:${u.id}:${u.hp}:${u.carryType ?? ''}:${u.carryAmount ?? 0}:${techSig}`;
+      // `garrison` entra na assinatura: é quantos estão A BORDO do transporte —
+      // sem isso o "N a bordo" e o botão Desembarcar não redesenhavam quando a
+      // tropa subia/descia (o painel ficava com o número velho).
+      sig = `u:${u.id}:${u.hp}:${u.carryType ?? ''}:${u.carryAmount ?? 0}:${u.garrison ?? 0}:${techSig}`;
     } else if (units.length > 1) {
       // inclui a vida de cada um pra grade de retratos atualizar em combate
       const techSig = [...new Set(units.map((u) => u.owner))]
@@ -329,7 +332,10 @@ export class Hud {
         .join('|');
       sig = `m:${units.map((u) => `${u.id}=${Math.ceil(u.hp)}`).join(',')}:${techSig}`;
     } else if (building) {
-      sig = `b:${building.id}:${building.hp}:${building.progress}:${building.foodLeft ?? -1}`;
+      // `garrison` entra na assinatura: sem isso o "N dentro" e o botão de ejetar
+      // não redesenhavam quando alguém entrava/saía (o painel ficava congelado
+      // mostrando gente dentro de um prédio já vazio).
+      sig = `b:${building.id}:${building.hp}:${building.progress}:${building.foodLeft ?? -1}:${building.garrison ?? 0}`;
     } else if (node) {
       sig = `n:${node.id}:${node.amount}`;
     } else if (sheep) {
@@ -456,8 +462,14 @@ export class Hud {
         el('div', 'sel-line', t('hud.food_left', { amt: Math.ceil(b.foodLeft), icon: RESOURCE_ICONS.food })),
       );
     }
+    // Guarnecido: quantos dentro + botão de EJETAR (a tecla U segue valendo, mas
+    // ninguém é obrigado a decorar — mesmo padrão do "Desembarcar" do transporte).
     if (b.garrison && b.owner === this.gs.you) {
       this.selPanel.appendChild(el('div', 'sel-line', t('hud.garrison', { n: b.garrison })));
+      const btn = el('button', 'btn', t('hud.eject'));
+      btn.title = t('hud.eject_tip');
+      btn.addEventListener('click', () => this.deps.onUnload(b.id));
+      this.selPanel.appendChild(btn);
     }
   }
 
