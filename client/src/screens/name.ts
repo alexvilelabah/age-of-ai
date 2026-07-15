@@ -16,6 +16,9 @@ export class NameScreen {
   readonly el: HTMLElement;
   private input: HTMLInputElement;
   private status: HTMLElement;
+  private titleEl: HTMLElement;
+  private enterBtn: HTMLButtonElement;
+  private footEl: HTMLElement;
 
   constructor(private deps: NameScreenDeps) {
     this.el = el('div', 'screen entry-screen');
@@ -42,7 +45,8 @@ export class NameScreen {
 
     // Login mínimo sobre a arte — a moldura e o título "Age of AI" já vêm da imagem.
     const login = el('div', 'entry-login');
-    login.appendChild(el('h2', 'entry-login-title', t('name.join_heading')));
+    this.titleEl = el('h2', 'entry-login-title', t('name.join_heading'));
+    login.appendChild(this.titleEl);
 
     this.input = el('input', 'txt');
     this.input.type = 'text';
@@ -51,19 +55,30 @@ export class NameScreen {
     if (this.deps.initialName) this.input.value = this.deps.initialName;
     login.appendChild(this.input);
 
-    const btn = el('button', 'btn primary', t('name.enter'));
-    btn.addEventListener('click', () => this.submit());
+    this.enterBtn = el('button', 'btn primary', t('name.enter'));
+    this.enterBtn.addEventListener('click', () => this.submit());
     this.input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this.submit();
     });
-    login.appendChild(btn);
+    login.appendChild(this.enterBtn);
 
     this.status = el('div', 'status-line');
     login.appendChild(this.status);
 
-    login.appendChild(el('p', 'entry-login-foot', t('name.footer')));
+    this.footEl = el('p', 'entry-login-foot', t('name.footer'));
+    login.appendChild(this.footEl);
 
     this.el.appendChild(login);
+  }
+
+  /** Troca de idioma AO VIVO (sem recarregar): só os textos mudam — o nome já
+   *  digitado e as brasas continuam de pé. */
+  retranslate(): void {
+    this.titleEl.textContent = t('name.join_heading');
+    this.input.placeholder = t('name.placeholder');
+    this.enterBtn.textContent = t('name.enter');
+    this.footEl.textContent = t('name.footer');
+    this.status.textContent = ''; // a mensagem antiga ficaria no idioma velho
   }
 
   setStatus(text: string): void {

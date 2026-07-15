@@ -594,10 +594,16 @@ export class GameInput {
             this.cmd({ kind: 'repair', unitIds, targetId: b.id });
             return;
           }
-          // torre/Centro próprio pronto + unidades → GUARNECER (entram dentro)
-          if ((b.progress ?? 1) >= 1 && GARRISON_CAP[b.type]) {
+          // Torre/Centro próprio pronto + TROPA → GUARNECER (entram dentro).
+          // ALDEÃO NÃO entra em prédio: o sprite do Centro é alto e o pickAt testa
+          // prédio ANTES de árvore, então mandar cortar uma árvore perto do Centro
+          // roubava o clique e enfiava o aldeão lá dentro. Aldeão cai pro `move`
+          // logo abaixo. (Embarcar em barco de transporte segue valendo — é outro
+          // caminho, mais abaixo, e o aldeão precisa dele no mapa Travessia.)
+          const troopIds = ownUnits.filter((u) => u.type !== 'villager').map((u) => u.id);
+          if ((b.progress ?? 1) >= 1 && GARRISON_CAP[b.type] && troopIds.length > 0) {
             this.mark('build', w.x, w.y, b.id);
-            this.cmd({ kind: 'garrison', unitIds, targetId: b.id });
+            this.cmd({ kind: 'garrison', unitIds: troopIds, targetId: b.id });
             return;
           }
           // prédio próprio completo sem ação de gather/build: cai para mover

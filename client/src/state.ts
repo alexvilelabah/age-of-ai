@@ -505,7 +505,16 @@ export class GameState {
       return lo <= hi;
     };
 
-    const B_H: Partial<Record<BuildingType, number>> = { farm: 0.2, house: 1.7, town_center: 3.2, wall: 0.9, watch_tower: 3.4, market: 2.0, mill: 1.6, lumber_camp: 1.4, mining_camp: 1.4 };
+    // Altura VISUAL do prédio em unidades de diagonal (k) — até onde o sprite
+    // cobre o clique. TEM que bater com o desenho: pra prédio com PNG a conta é
+    // `2*size*fit.scale*(imgH/imgW) - size` (ver drawBuildingSprite no renderer).
+    // Estes números são da época do desenho PROCEDURAL e ficaram defasados quando
+    // entraram os sprites. O Centro estava em 3.2 sendo que o telhado dele sobe só
+    // ~1.15 (PNG 467x323, size 3, scale 1.0): ele COMIA o clique de árvore/mina
+    // que ficavam VISÍVEIS acima do telhado — dava pra ver e não dava pra clicar.
+    // Os demais erram pro lado inofensivo (assumem MENOS que o sprite: dá pra
+    // clicar só a parte de baixo do prédio), então ficam como estão por ora.
+    const B_H: Partial<Record<BuildingType, number>> = { farm: 0.2, house: 1.7, town_center: 1.2, wall: 0.9, watch_tower: 3.4, market: 2.0, mill: 1.6, lumber_camp: 1.4, mining_camp: 1.4 };
     for (const b of this.buildings.values()) {
       const size = BUILDING_DEFS[b.type]?.size ?? 1;
       // Inimigo só é SELECIONÁVEL com o tile à vista (o "lembrado" na névoa

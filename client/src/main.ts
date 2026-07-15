@@ -60,22 +60,20 @@ const settingsOverlay = new SettingsOverlay({
   onSfxVol: (v) => { gameScreen?.setSfxVolume(v); settings.sfxVol = v; saveSettings(); },
   onRenderScale: (s) => { gameScreen?.setRenderScale(s); settings.renderScale = s; saveSettings(); },
   onLang: (lang) => {
-    if (current === 'game' && gameScreen) {
-      // No jogo, recarregar derrubaria a partida — então troca AO VIVO: repopula
-      // os dicionários e re-traduz o HUD e o próprio menu; conexão e estado seguem.
-      applyLang(lang);
-      saveSettings();
-      document.documentElement.lang = lang;
-      gearBtn.title = t('opt.title');
-      gearBtn.setAttribute('aria-label', t('opt.title'));
-      gameScreen.retranslate();
-      settingsOverlay.retranslate();
-    } else {
-      // Fora do jogo, reload é simples e seguro (reconecta ao lobby).
-      settings.lang = lang;
-      saveSettings();
-      location.reload();
-    }
+    // Troca AO VIVO em QUALQUER tela — sem reload. Antes, fora do jogo isso dava
+    // location.reload(): a página inteira recarregava (a "travada", com a arte da
+    // entrada de novo) e o app sempre volta pra tela de nome, então o jogador
+    // perdia o lugar (ex.: estava no lobby e caía no início).
+    applyLang(lang); // já grava settings.lang e repopula os dicionários
+    saveSettings();
+    document.documentElement.lang = lang;
+    gearBtn.title = t('opt.title');
+    gearBtn.setAttribute('aria-label', t('opt.title'));
+    nameScreen.retranslate();
+    lobbyScreen.retranslate();
+    roomScreen.retranslate();
+    gameScreen?.retranslate();
+    settingsOverlay.retranslate();
   },
   // "Sair da sala" pela engrenagem (funciona na sala E no meio do jogo). Em jogo o
   // servidor trata como desistência (o adversário ganha). Sai otimista pro lobby; o

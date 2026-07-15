@@ -60,15 +60,17 @@ function ctlLabel(icon: string, label: string): HTMLElement {
 
 export class RoomScreen {
   readonly el: HTMLElement;
-  private roomTitle: HTMLElement;
-  private rowsEl: HTMLElement;
-  private readyBtn: HTMLButtonElement;
-  private startBtn: HTMLButtonElement;
-  private addBotBtn: HTMLButtonElement;
-  private removeBotBtn: HTMLButtonElement;
-  private chatLog: HTMLElement;
-  private chatInput: HTMLInputElement;
+  private sala: HTMLElement;
+  private roomTitle!: HTMLElement;
+  private rowsEl!: HTMLElement;
+  private readyBtn!: HTMLButtonElement;
+  private startBtn!: HTMLButtonElement;
+  private addBotBtn!: HTMLButtonElement;
+  private removeBotBtn!: HTMLButtonElement;
+  private chatLog!: HTMLElement;
+  private chatInput!: HTMLInputElement;
 
+  private roomId = '';
   private players: RoomPlayer[] = [];
   private myId = -1;
   private mode: GameMode = 'normal';
@@ -80,6 +82,28 @@ export class RoomScreen {
 
   constructor(private deps: RoomScreenDeps) {
     this.el = el('div', 'screen room-screen');
+    this.sala = this.build();
+    this.el.appendChild(this.sala);
+  }
+
+  /** Troca de idioma AO VIVO (sem recarregar a página): remonta o tabuleiro no
+   *  idioma novo, preservando o chat e reaplicando o estado atual da sala. */
+  retranslate(): void {
+    const chatHtml = this.chatLog.innerHTML;
+    const chatVal = this.chatInput.value;
+    const fresh = this.build();
+    this.sala.replaceWith(fresh);
+    this.sala = fresh;
+    this.chatLog.innerHTML = chatHtml;
+    this.chatInput.value = chatVal;
+    this.setState(this.roomId, this.players, this.myId, this.mode, this.fog, this.terrain);
+  }
+
+  /** Monta (ou remonta) o tabuleiro inteiro no idioma atual. */
+  private build(): HTMLElement {
+    this.modeBtns = [];
+    this.fogBtns = [];
+    this.terrainBtns = [];
     const sala = el('div', 'sala');
 
     // ---- Cabeçalho (brasão + título) ----
@@ -210,7 +234,7 @@ export class RoomScreen {
     chatPanel.appendChild(chatBar);
     sala.appendChild(chatPanel);
 
-    this.el.appendChild(sala);
+    return sala;
   }
 
   reset(): void {
@@ -219,6 +243,7 @@ export class RoomScreen {
   }
 
   setState(roomId: string, players: RoomPlayer[], myId: number, mode: GameMode = 'normal', fog = false, terrain: TerrainKind = 'classic'): void {
+    this.roomId = roomId;
     this.players = Array.isArray(players) ? players : [];
     this.myId = myId;
     this.mode = mode;

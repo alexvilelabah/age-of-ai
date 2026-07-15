@@ -746,6 +746,11 @@ export class Game {
       if (b.owner !== playerId || b.progress < 1 || !GARRISON_CAP[b.type]) return;
       for (const u of this.ownedUnits(playerId, unitIds)) {
         if (isNavalUnit(u.type)) continue; // barco não entra em prédio
+        // Aldeão NÃO guarnece prédio: o clique numa árvore perto do Centro era
+        // roubado pelo sprite alto dele e o aldeão sumia lá dentro em vez de
+        // cortar. (Aldeão embarcando em TRANSPORTE segue valendo — é o outro
+        // ramo, abaixo, e ele precisa disso pra cruzar o rio.)
+        if (u.type === 'villager') continue;
         this.clearTasks(u);
         u.garrisonTargetId = targetId;
         if (this.pathUnitAdjacentTo(u, b.tileX, b.tileY, BUILDING_DEFS[b.type].size)) {

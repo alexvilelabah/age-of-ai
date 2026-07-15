@@ -198,13 +198,28 @@ function tryGenerate(playerCount: number, seed: number, forceCarve = false, terr
       { type: 'stone_mine', count: 3 + Math.floor(rng() * 3), near: 6, far: 12 }, // 3..5
     ];
     const angleBase = rng() * Math.PI * 2;
+    // Direção do spawn para o CENTRO do mapa: os spawns são de CANTO, então metade
+    // das direções cai fora do mapa.
+    const toCenter = Math.atan2(size / 2 - s.y, size / 2 - s.x);
+    /** Interpola dois ângulos pelo arco curto (não dá volta errada no ±180°). */
+    const lerpAngle = (a: number, b: number, t: number): number =>
+      a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
+    const inMap = (x: number, y: number): boolean => x >= 5 && y >= 5 && x < size - 5 && y < size - 5;
     clusterSpecs.forEach((spec, ci) => {
       // base espaçada (evita amontoar) + jitter grande (direções bem diferentes).
-      const angle = angleBase + (ci * Math.PI * 2) / clusterSpecs.length + (rng() - 0.5) * 1.0;
+      const want = angleBase + (ci * Math.PI * 2) / clusterSpecs.length + (rng() - 0.5) * 1.0;
       const dist2 = spec.near + rng() * (spec.far - spec.near);
-      // clamp mantém o centro no mapa (spawn de canto + distância grande não cai fora).
-      const centerX = Math.max(6, Math.min(size - 6, Math.round(s.x + Math.cos(angle) * dist2)));
-      const centerY = Math.max(6, Math.min(size - 6, Math.round(s.y + Math.sin(angle) * dist2)));
+      let centerX = Math.round(s.x + Math.cos(want) * dist2);
+      let centerY = Math.round(s.y + Math.sin(want) * dist2);
+      // Caiu fora? GIRA em direção ao centro do mapa até caber, mantendo a
+      // distância do spawn. NÃO usar clamp aqui: clampar a POSIÇÃO largava a mina
+      // colada no Centro da Cidade (o sprite alto do Centro roubava o clique e não
+      // dava pra minerar) — o bug que isso conserta.
+      for (let k = 1; k <= 10 && !inMap(centerX, centerY); k++) {
+        const a = lerpAngle(want, toCenter, k / 10);
+        centerX = Math.round(s.x + Math.cos(a) * dist2);
+        centerY = Math.round(s.y + Math.sin(a) * dist2);
+      }
       placeClusterNodes(spec.type, spec.count, centerX, centerY, size, rng, placeNode);
     });
   }

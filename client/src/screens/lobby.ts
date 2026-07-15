@@ -33,17 +33,34 @@ function phead(icon: string, label: string): HTMLElement {
 
 export class LobbyScreen {
   readonly el: HTMLElement;
-  private listEl: HTMLElement;
+  private panel: HTMLElement;
+  private listEl!: HTMLElement;
   private rooms: RoomSummary[] = [];
 
   constructor(private deps: LobbyScreenDeps) {
     this.el = el('div', 'screen lobby-screen');
 
-    // Emblema heráldico de fundo (sutil, atrás do painel).
+    // Emblema heráldico de fundo (sutil, atrás do painel) — não tem texto.
     const emblem = el('div', 'lobby-emblem');
     emblem.innerHTML = EMBLEM;
     this.el.appendChild(emblem);
 
+    this.panel = this.build();
+    this.el.appendChild(this.panel);
+    this.renderList();
+  }
+
+  /** Troca de idioma AO VIVO (sem recarregar): remonta o painel no idioma novo
+   *  e redesenha a lista de salas já em memória. */
+  retranslate(): void {
+    const fresh = this.build();
+    this.panel.replaceWith(fresh);
+    this.panel = fresh;
+    this.renderList();
+  }
+
+  /** Monta (ou remonta) o painel "Salas" no idioma atual. */
+  private build(): HTMLElement {
     const panel = gframe('lobby-panel');
     panel.appendChild(phead(IC_SALAS, t('lobby.rooms')));
 
@@ -58,9 +75,7 @@ export class LobbyScreen {
     actions.appendChild(createBtn);
     actions.appendChild(refreshBtn);
     panel.appendChild(actions);
-
-    this.el.appendChild(panel);
-    this.renderList();
+    return panel;
   }
 
   setRooms(rooms: RoomSummary[]): void {
