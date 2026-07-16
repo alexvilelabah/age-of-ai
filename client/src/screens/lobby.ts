@@ -1,6 +1,6 @@
 // Tela 2: Lobby — lista de salas (atualizada por pushes roomList), "Criar sala"
-// e "Entrar" por sala. Visual ornamentado (molduras de ouro), fundo de pedra
-// com um emblema heráldico sutil — mesma vibe da tela de Sala.
+// e "Entrar" por sala. Visual ornamentado (molduras de ouro) sobre fundo de
+// pedra escura — mesma vibe da tela de Sala.
 
 import type { RoomSummary } from '@age/shared';
 import { el } from '../ui';
@@ -12,9 +12,8 @@ export interface LobbyScreenDeps {
   onRefresh: () => void;
 }
 
-// Ícone do cabeçalho (castelo) e o emblema de fundo (escudo + coroa, bem sutil).
+// Ícone do cabeçalho (castelo).
 const IC_SALAS = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 21V11l2-1V7h2v2l2-1V6h2v2l2 1V7h2v3l2 1v10h-6v-5H9v5z"/></svg>';
-const EMBLEM = '<svg viewBox="0 0 200 224" fill="none" stroke="#d8b25a" stroke-width="3"><path d="M24 24H176V120C176 168 138 196 100 214 62 196 24 168 24 120Z"/><path d="M58 98 66 54 88 76 100 46 112 76 134 54 142 98Z"/><circle cx="66" cy="50" r="4" fill="#d8b25a"/><circle cx="100" cy="42" r="4.5" fill="#d8b25a"/><circle cx="134" cy="50" r="4" fill="#d8b25a"/></svg>';
 
 /** Moldura de quadro com os 4 cantos ornamentados (igual à tela de Sala). */
 function gframe(cls: string): HTMLElement {
@@ -39,12 +38,6 @@ export class LobbyScreen {
 
   constructor(private deps: LobbyScreenDeps) {
     this.el = el('div', 'screen lobby-screen');
-
-    // Emblema heráldico de fundo (sutil, atrás do painel) — não tem texto.
-    const emblem = el('div', 'lobby-emblem');
-    emblem.innerHTML = EMBLEM;
-    this.el.appendChild(emblem);
-
     this.panel = this.build();
     this.el.appendChild(this.panel);
     this.renderList();

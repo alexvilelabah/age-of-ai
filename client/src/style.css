@@ -968,7 +968,7 @@ button.btn.trade-btn {
 
 /* ===================================================================
    Lobby (tela 2) — mesma vibe ornamentada da Sala: painel emoldurado
-   em ouro, fundo de pedra escura e um emblema heráldico sutil.
+   em ouro sobre fundo de pedra escura.
    =================================================================== */
 .screen.lobby-screen::before {
   background:
@@ -976,9 +976,6 @@ button.btn.trade-btn {
     radial-gradient(140% 120% at 12% 105%, #1b140c 0%, transparent 60%),
     linear-gradient(160deg, #100c07, #090603 72%);
 }
-/* emblema heráldico (escudo + coroa) — grande, faint, atrás do painel */
-.lobby-emblem { position: fixed; inset: 0; z-index: -1; display: grid; place-items: center; opacity: 0.09; pointer-events: none; }
-.lobby-emblem svg { width: min(78vh, 660px); height: auto; filter: drop-shadow(0 0 46px rgba(216, 178, 90, 0.18)); }
 
 .lobby-panel { position: relative; z-index: 1; width: 500px; max-width: 92vw; padding: 20px 24px 22px; display: flex; flex-direction: column; gap: 14px; color: var(--parch); }
 .lobby-panel .sala-head { margin: 0; }
