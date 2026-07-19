@@ -26,12 +26,26 @@ const MONITOR_KEY = process.env.MONITOR_KEY ?? '';
 // deste arquivo (server/src) e nao do diretorio de trabalho.
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../client/dist');
 
+// Colecao de jogos HTML estaticos servida em /online-games/ (projeto separado,
+// gerado fora deste repo). Fica FORA do git de proposito: sao ~47 MB de conteudo
+// de terceiros, que nao tem por que inchar o historico. Se a pasta nao existir,
+// a rota simplesmente responde 404 e o resto do site segue normal.
+const JOGOS_BASE = '/online-games/';
+const JOGOS_DIR = process.env.JOGOS_DIR
+  ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../online-games');
+
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
+  // .htm sem o "l": um dos jogos da colecao (/online-games) tem index.htm como
+  // entrada. Sem esta linha o navegador recebe octet-stream e BAIXA a pagina em
+  // vez de abrir.
+  '.htm': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -42,10 +56,60 @@ const CONTENT_TYPES: Record<string, string> = {
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.eot': 'application/vnd.ms-fontobject',
+  '.map': 'application/json; charset=utf-8',
 };
+
+// Serve a colecao de jogos de /online-games/. Separado do serveStatic de
+// proposito por causa do 404: aqui um caminho inexistente TEM que responder 404
+// de verdade. Se caisse no fallback do index.html (como faz o bloco do jogo),
+// toda URL errada devolveria 200 com a pagina do Age of AI — o "soft 404" que o
+// Google penaliza, e que ainda esconderia erro de link nosso.
+function serveJogos(urlPath: string, res: http.ServerResponse): void {
+  const rel = urlPath.slice(JOGOS_BASE.length);
+  let filePath = path.join(JOGOS_DIR, rel);
+
+  // Mesma trava de path traversal do bloco do jogo: o alvo TEM que ficar dentro
+  // de JOGOS_DIR.
+  if (filePath !== JOGOS_DIR && !filePath.startsWith(JOGOS_DIR + path.sep)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403');
+    return;
+  }
+
+  let stat: fs.Stats | null = null;
+  try { stat = fs.statSync(filePath); } catch { stat = null; }
+
+  if (stat?.isDirectory()) {
+    // Pasta sem barra no fim (/online-games/algum-jogo) redireciona pra versao
+    // com barra. Sem isso, link relativo dentro da pagina resolve pro nivel
+    // errado — e o canonical passa a divergir da URL acessada.
+    if (!urlPath.endsWith('/')) {
+      res.writeHead(301, { Location: urlPath + '/' });
+      res.end();
+      return;
+    }
+    filePath = path.join(filePath, 'index.html');
+    try { stat = fs.statSync(filePath); } catch { stat = null; }
+  }
+
+  if (!stat || !stat.isFile()) {
+    res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end('<h1>404</h1><p>Page not found.</p><p><a href="/online-games/">Back to the games</a></p>');
+    return;
+  }
+
+  const type = CONTENT_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+  res.writeHead(200, { 'Content-Type': type });
+  fs.createReadStream(filePath).pipe(res);
+}
 
 // Serve SOMENTE arquivos de dentro de client/dist. Nada mais do PC fica acessivel.
 function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): void {
@@ -77,6 +141,19 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): void 
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'X-Robots-Tag': 'noindex, nofollow' });
       res.end(MONITOR_HTML);
     }
+    return;
+  }
+
+  // Colecao de jogos. TEM que ser resolvida aqui, ANTES do bloco abaixo: o
+  // fallback da linha ~95 devolve o index.html do jogo pra QUALQUER caminho
+  // inexistente, entao sem este desvio /online-games/... nunca apareceria.
+  if (urlPath === '/online-games') {
+    res.writeHead(301, { Location: JOGOS_BASE });
+    res.end();
+    return;
+  }
+  if (urlPath.startsWith(JOGOS_BASE)) {
+    serveJogos(urlPath, res);
     return;
   }
 

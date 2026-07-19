@@ -13,6 +13,11 @@ link_temporario.txt
 # Ferramentas locais / sessao
 .claude/
 
+# Colecao de jogos servida em /online-games/ (~47 MB de conteudo de terceiros,
+# gerado pelo projeto jogos-html). Fica fora do git de proposito: nao tem por que
+# inchar o historico. Chega no celular por copia, nao por git pull.
+online-games/
+
 # Pastas que NAO fazem parte do jogo (outros projetos / apps decompilados / backups)
 Nova pasta (2)/
 world-of-claudecraft-main/
