@@ -14,6 +14,7 @@ import { GAME_PORT } from '@age/shared';
 import type { ClientMessage, ServerMessage } from '@age/shared';
 import { Lobby } from './lobby';
 import { readMetrics, MONITOR_HTML } from './metrics';
+import { conectarJogo, slugDoPath } from './online-games-ws';
 
 const lobby = new Lobby();
 const PORT = Number(process.env.PORT) || GAME_PORT;
@@ -197,12 +198,49 @@ function safeSend(ws: WebSocket, msg: ServerMessage): void {
   }
 }
 
-// WebSocket no MESMO servidor HTTP. Sem restricao de path: o cliente usa
-// ws://host:8080 em local e wss://host/ws atras do tunel — ambos sobem aqui.
+// WebSocket no MESMO servidor HTTP. O cliente do Age of AI usa ws://host:8080
+// em local e wss://host/ws atras do tunel — ambos sobem aqui.
 // maxPayload: teto no tamanho das mensagens RECEBIDAS do cliente (as do jogo são
 // pequenas — comando/chat/nome). Evita que alguém mande um frame gigante e estoure
 // a memória do celular. 64 KB é bem folgado pro maior comando legítimo.
-const wss = new WebSocketServer({ server: httpServer, maxPayload: 64 * 1024 });
+//
+// Por que noServer + roteamento manual do upgrade (logo abaixo): a coleção
+// /online-games tem jogos com multiplayer próprio, que precisam do seu próprio
+// WebSocket. Com um WSS unico "no servidor HTTP", TODA conexao caía no lobby do
+// Age of AI. A regra é conservadora: só o prefixo da coleção vai para o outro
+// servico; QUALQUER outro path — inclusive o /ws do Age of AI — continua indo
+// para o lobby, exatamente como antes desta mudança.
+const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+const jogosWss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
+const JOGOS_WS_BASE = '/online-games/ws';
+
+httpServer.on('upgrade', (req, socket, head) => {
+  const caminho = (req.url ?? '').split('?')[0].replace(/\/+$/, '') || '/';
+  const slug = caminho === JOGOS_WS_BASE || caminho.startsWith(JOGOS_WS_BASE + '/')
+    ? slugDoPath(caminho, JOGOS_WS_BASE)
+    : null;
+
+  if (slug === null && caminho.startsWith(JOGOS_WS_BASE)) {
+    socket.destroy(); // path da coleção, mas slug inválido
+    return;
+  }
+  if (slug !== null) {
+    jogosWss.handleUpgrade(req, socket, head, (ws) => jogosWss.emit('connection', ws, req, slug));
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+});
+
+// A coleção roda isolada: um erro dela não pode derrubar o lobby do Age of AI.
+jogosWss.on('connection', (ws: WebSocket, _req: unknown, slug: string) => {
+  try {
+    conectarJogo(ws, slug);
+  } catch (err) {
+    console.error('[online-games] falha ao conectar', err);
+    try { ws.close(); } catch { /* ignora */ }
+  }
+});
+jogosWss.on('error', (err) => console.error('[online-games] erro no servidor', err));
 
 wss.on('connection', (ws: WebSocket) => {
   const conn = lobby.connect((msg) => safeSend(ws, msg));
