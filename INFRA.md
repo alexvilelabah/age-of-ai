@@ -54,6 +54,31 @@ mas é permanente) e a procedência do áudio embutido no `index.html` do Cube R
 A pasta `online-games/` fica no `.gitignore` deste repo de propósito (~50 MB de conteúdo de
 terceiros). Ela chega no celular por **cópia pelo cabo**, não por `git pull`.
 
+## Assistir uma partida
+
+Duas formas, ambas de graça pro servidor quando ninguém está usando:
+
+- **Depois de perder**: se a partida continua sem você, aparece "Assistir o resto" ou "Voltar
+  ao lobby". Custo zero — o servidor já mandava tudo pro derrotado.
+- **De fora**: sala em jogo com **Transmitir: Aberta** (padrão) mostra **Assistir** na lista
+  do lobby, no lugar do "Entrar" desabilitado.
+
+O espectador **vê a ação, não os números**: recursos, tecnologias, progresso de era e preços do
+mercado **não saem do servidor** pra ele (`broadcastSnapshot` monta um pacote magro). Não é
+esconderijo de tela — nem um cliente modificado lê o ouro de quem joga. Ele também não manda
+comando (barrado em `enqueueCommand`), não ocupa vaga e não conta pra vitória.
+
+Quem joga vê **"👁 N assistindo"** — ninguém é observado sem saber. O host pode fechar a
+transmissão a qualquer momento, inclusive no meio da partida (quem estava assistindo volta pro
+lobby avisado).
+
+**Custo:** ~39 KB/s por espectador e 0,1% de um núcleo — e **duas** serializações no total, não
+uma por pessoa. Com zero espectadores nenhum pacote extra é montado. Travado por
+`scripts/spectator_test.ts`.
+
+⚠️ Esconder recursos **reduz** a trapaça, não elimina: ver a *posição* do exército já é
+informação. Se um dia incomodar, o conserto conhecido é atrasar a transmissão ~2 min.
+
 ## Como adicionar um jogo multiplayer novo
 
 **Não se mexe no servidor.** O serviço de salas já é genérico:
@@ -109,6 +134,11 @@ postinstall — no Windows instala calado, no celular não.
 | RAM | 7 GB livres de 11 GB |
 | CPU parado | **servidor 0,07%** · túnel ~2,9% de **um** núcleo (de 6) |
 | CPU em partida | o Age of AI é o que pesa (RTS com A* a 10 ticks/s). Os joguinhos não pesam. |
+
+**Banda por jogador: 224 → 39 KB/s** (upload total com 4 jogadores: 6,99 → 1,21 Mbps).
+Medido no fio, com sockets reais. Duas correções: compressão `permessage-deflate` nível 1 (o
+snapshot é JSON repetitivo, cai pra 12%) e serializar o snapshot **uma vez** em vez de uma por
+destinatário. A banda era o gargalo do jogo — não a CPU.
 
 O servidor parado saiu de **1,32% → 0,07%** (95% a menos) com dois consertos, e os dois eram
 a mesma ideia: **nada deve rodar quando ninguém está usando.**

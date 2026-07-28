@@ -66,6 +66,11 @@ export type ClientMessage =
   | { type: 'setMode'; mode: GameMode } // apenas host: escolhe Normal/Batalha na sala
   | { type: 'setFog'; fog: boolean } // apenas host: mapa fechado (névoa) ou aberto
   | { type: 'setTerrain'; terrain: TerrainKind } // apenas host: Clássico ou Rio
+  // apenas host: permite que gente de fora ASSISTA a partida. Ligado por padrão;
+  // desmarcar fecha a transmissão (e derruba quem já estava assistindo).
+  | { type: 'setBroadcast'; on: boolean }
+  // entra numa partida EM ANDAMENTO só pra assistir (não joga, não tem vaga)
+  | { type: 'spectate'; roomId: string }
   | { type: 'setBotDifficulty'; botId: number; difficulty: BotDifficulty } // apenas host
   | { type: 'listRooms' }
   | { type: 'createRoom' }
@@ -89,6 +94,11 @@ export interface RoomSummary {
   playerCount: number;
   maxPlayers: number;
   inGame: boolean;
+  /** Partida em andamento que aceita espectador → o cliente mostra "Assistir"
+   *  no lugar do "Entrar" desabilitado. */
+  canSpectate?: boolean;
+  /** Quantos estão assistindo agora (mostrado na lista e pros jogadores). */
+  spectators?: number;
 }
 
 export interface RoomPlayer {
@@ -107,14 +117,17 @@ export type ServerMessage =
   | { type: 'nameOk' }              // nome aceito -> pode ir pro lobby
   | { type: 'nameTaken' }           // nome já em uso -> escolha outro
   | { type: 'roomList'; rooms: RoomSummary[] }
-  | { type: 'roomState'; roomId: string; players: RoomPlayer[]; mode: GameMode; fog: boolean; terrain: TerrainKind }
+  | { type: 'roomState'; roomId: string; players: RoomPlayer[]; mode: GameMode; fog: boolean; terrain: TerrainKind; broadcast: boolean }
   | { type: 'leftRoom' }
   // Erro: o servidor manda um CÓDIGO (traduzido no cliente via i18n) + params
   // opcionais. `age` (número) e `building` (tipo) são convertidos para o nome
   // no idioma do jogador pelo cliente. `message` é reserva (texto pronto).
   | { type: 'error'; code: string; params?: Record<string, string | number>; message?: string }
   | { type: 'chat'; from: string; text: string }
-  | { type: 'gameStart'; map: MapData; players: PlayerInfo[]; you: number; fog: boolean }
+  // `spectating`: você entrou só pra ASSISTIR — não tem vaga nem unidades, e
+  // `you` não corresponde a jogador nenhum (o cliente usa isso pra revelar o
+  // mapa e esconder os painéis de comando).
+  | { type: 'gameStart'; map: MapData; players: PlayerInfo[]; you: number; fog: boolean; spectating?: boolean }
   | {
       type: 'snapshot';
       tick: number;
@@ -123,9 +136,16 @@ export type ServerMessage =
       nodes: NodeSnap[];
       sheep: SheepSnap[];
       players: PlayerSnap[];
-      /** Preços do mercado (ouro por lote de 100) — globais da sala. */
-      market: MarketPrices;
+      /** Preços do mercado (ouro por lote de 100) — globais da sala.
+       *  Ausente pro espectador (é informação de economia). */
+      market?: MarketPrices;
+      /** Quantos estão assistindo. Vai só pros JOGADORES, pra ninguém ser
+       *  observado sem saber. */
+      spectators?: number;
     }
+  // A transmissão foi fechada pelo host (ou a partida acabou) — quem estava
+  // assistindo volta pro lobby com um aviso.
+  | { type: 'spectateEnded'; reason: 'closed' | 'gameOver' }
   // `won` (opcional) diz se VOCÊ venceu — necessário em times (vitória em dupla).
   | { type: 'gameOver'; winner: number; winnerName: string; won?: boolean }
   // Partida pausada/retomada (para TODOS da sala). `by` = quem mexeu (mostra na tela).

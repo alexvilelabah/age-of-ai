@@ -17,6 +17,7 @@ export interface RoomScreenDeps {
   onSetTeam: (playerId: number, team: number) => void;
   onSetMode: (mode: GameMode) => void;
   onSetFog: (fog: boolean) => void;
+  onSetBroadcast: (on: boolean) => void;
   onSetTerrain: (terrain: TerrainKind) => void;
   onSetBotDifficulty: (botId: number, difficulty: BotDifficulty) => void;
 }
@@ -28,6 +29,7 @@ const IC_PLAYERS = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 11a
 const IC_SWORDS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14.5 4.5l5 5L9 20H4v-5z"/><path d="M14.5 4.5l-11 11M20 20l-6-6"/></svg>';
 const IC_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 12a8 8 0 01-11.5 7.2L3 21l1.8-6.5A8 8 0 1121 12z"/></svg>';
 const IC_MODE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3l4 6-4 6-4-6zM18 3l4 6-4 6-4-6zM12 9l4 6-4 6-4-6z"/></svg>';
+const IC_BROADCAST = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><path d="M7.5 7.5a6.4 6.4 0 000 9M16.5 16.5a6.4 6.4 0 000-9M4.2 4.2a11 11 0 000 15.6M19.8 19.8a11 11 0 000-15.6"/></svg>';
 const IC_MAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/></svg>';
 const IC_TERRAIN = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C9 6 6 9 6 13a6 6 0 0012 0c0-4-3-7-6-11z"/></svg>';
 const CREST = '<svg class="sala-crest" viewBox="0 0 52 58" aria-hidden="true"><path d="M6 6H46V32C46 44 36 50 26 56 16 50 6 44 6 32Z" fill="#22385a" stroke="#d8b25a" stroke-width="2.4"/><path d="M13 34 15 20 20.5 27 26 16 31.5 27 37 20 39 34Z" fill="#f6e7b4"/><circle cx="15" cy="18" r="1.7" fill="#f6e7b4"/><circle cx="26" cy="14" r="1.8" fill="#f6e7b4"/><circle cx="37" cy="18" r="1.7" fill="#f6e7b4"/></svg>';
@@ -78,6 +80,8 @@ export class RoomScreen {
   private terrain: TerrainKind = 'classic';
   private modeBtns: { m: GameMode; btn: HTMLButtonElement }[] = [];
   private fogBtns: { closed: boolean; btn: HTMLButtonElement }[] = [];
+  private broadcast = true; // nasce transmitindo (igual ao servidor)
+  private bcBtns: { on: boolean; btn: HTMLButtonElement }[] = [];
   private terrainBtns: { tr: TerrainKind; btn: HTMLButtonElement }[] = [];
 
   constructor(private deps: RoomScreenDeps) {
@@ -96,13 +100,14 @@ export class RoomScreen {
     this.sala = fresh;
     this.chatLog.innerHTML = chatHtml;
     this.chatInput.value = chatVal;
-    this.setState(this.roomId, this.players, this.myId, this.mode, this.fog, this.terrain);
+    this.setState(this.roomId, this.players, this.myId, this.mode, this.fog, this.terrain, this.broadcast);
   }
 
   /** Monta (ou remonta) o tabuleiro inteiro no idioma atual. */
   private build(): HTMLElement {
     this.modeBtns = [];
     this.fogBtns = [];
+    this.bcBtns = [];
     this.terrainBtns = [];
     const sala = el('div', 'sala');
 
@@ -173,6 +178,26 @@ export class RoomScreen {
     mapCtl.appendChild(mapSeg);
     ccol.appendChild(mapCtl);
 
+    // Transmitir a partida (deixar gente de fora assistir) — só host. Nasce
+    // LIGADO: quem quiser jogar fechado desmarca. Diferente dos outros controles,
+    // este vale TAMBÉM com a partida em andamento (fechar derruba quem assiste).
+    const bcCtl = el('div', 'sala-ctl');
+    bcCtl.appendChild(ctlLabel(IC_BROADCAST, t('room.broadcast')));
+    const bcSeg = el('div', 'seg');
+    const bcOpts: { on: boolean; label: string; title: string }[] = [
+      { on: true, label: t('room.broadcast_on'), title: t('room.broadcast_on_desc') },
+      { on: false, label: t('room.broadcast_off'), title: t('room.broadcast_off_desc') },
+    ];
+    for (const o of bcOpts) {
+      const btn = el('button', 'btn seg-btn', o.label);
+      btn.title = o.title;
+      btn.addEventListener('click', () => this.deps.onSetBroadcast(o.on));
+      this.bcBtns.push({ on: o.on, btn });
+      bcSeg.appendChild(btn);
+    }
+    bcCtl.appendChild(bcSeg);
+    ccol.appendChild(bcCtl);
+
     // Terreno (Clássico / Rio / Travessia) — só host
     const terrCtl = el('div', 'sala-ctl terrain');
     terrCtl.appendChild(ctlLabel(IC_TERRAIN, t('room.terrain')));
@@ -242,13 +267,14 @@ export class RoomScreen {
     this.chatInput.value = '';
   }
 
-  setState(roomId: string, players: RoomPlayer[], myId: number, mode: GameMode = 'normal', fog = false, terrain: TerrainKind = 'classic'): void {
+  setState(roomId: string, players: RoomPlayer[], myId: number, mode: GameMode = 'normal', fog = false, terrain: TerrainKind = 'classic', broadcast = true): void {
     this.roomId = roomId;
     this.players = Array.isArray(players) ? players : [];
     this.myId = myId;
     this.mode = mode;
     this.fog = fog;
     this.terrain = terrain;
+    this.broadcast = broadcast;
     const host = this.players.find((p) => p.isHost);
     this.roomTitle.textContent = host ? t('lobby.room_of', { host: host.name }) : t('room.room_n', { id: roomId });
     this.renderRows();
@@ -262,6 +288,10 @@ export class RoomScreen {
     }
     for (const { closed, btn } of this.fogBtns) {
       btn.classList.toggle('primary', closed === this.fog);
+      btn.disabled = !isHost;
+    }
+    for (const { on, btn } of this.bcBtns) {
+      btn.classList.toggle('primary', on === this.broadcast);
       btn.disabled = !isHost;
     }
     for (const { tr, btn } of this.terrainBtns) {

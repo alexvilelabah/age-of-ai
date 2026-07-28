@@ -8,6 +8,11 @@ export interface Connection {
   id: number;
   name: string;
   roomId: string | null;
+  /** Sala cuja partida esta conexão está ASSISTINDO. Separado de `roomId` de
+   *  propósito: espectador não é membro da sala, não ocupa vaga e não conta pra
+   *  nada. Como `roomId` fica null, todo caminho de jogar (comando, pause, ping)
+   *  já barra ele na entrada sem precisar de checagem extra. */
+  spectatingRoomId?: string | null;
   clientId?: string; // identidade estável do navegador (localStorage) p/ reassumir o nome no refresh
   send: (msg: ServerMessage) => void;
 }
@@ -34,6 +39,9 @@ interface Room {
   mode: GameMode; // 'normal' | 'batalha' (escolhido pelo host)
   fog: boolean; // névoa de guerra (mapa fechado); default false = mapa aberto
   terrain: TerrainKind; // 'classic' (lagos) | 'river' (rio + vaus + peixes)
+  /** Transmitir a partida: deixa gente de fora ASSISTIR. Nasce LIGADO — o host
+   *  desmarca se quiser jogar fechado. */
+  broadcast: boolean;
   lastActivity: number; // última ação na sala (Date.now) — p/ fechar sala ociosa
 }
 
@@ -166,6 +174,7 @@ export class Lobby {
     // Se esta conexão já não é a mapeada para o id (a vaga foi reassumida por uma
     // reconexão que reusou o mesmo playerId), ignore — não derrube o novo dono.
     if (this.conns.get(conn.id) !== conn) return;
+    if (conn.spectatingRoomId) this.stopSpectating(conn); // fechou a aba assistindo
     if (conn.roomId) this.handleDisconnectFromRoom(conn);
     if (this.conns.get(conn.id) === conn) this.conns.delete(conn.id);
   }
@@ -198,6 +207,12 @@ export class Lobby {
         break;
       case 'setTerrain':
         this.setTerrain(conn, msg.terrain);
+        break;
+      case 'setBroadcast':
+        this.setBroadcast(conn, msg.on);
+        break;
+      case 'spectate':
+        this.spectate(conn, msg.roomId);
         break;
       case 'setBotDifficulty':
         this.setBotDifficulty(conn, msg.botId, msg.difficulty);
@@ -362,6 +377,7 @@ export class Lobby {
       mode: 'normal',
       fog: false, // mapa começa ABERTO (o host fecha se quiser névoa)
       terrain: 'classic', // padrão: continente clássico; host troca pra Rio
+      broadcast: true, // nasce transmitindo; o host desmarca pra jogar fechado
       lastActivity: Date.now(),
     };
     room.members.set(conn.id, { id: conn.id, ready: false, joinOrder: this.joinCounter++ });
@@ -400,6 +416,13 @@ export class Lobby {
   }
 
   private leaveRoom(conn: Connection): void {
+    // Estava só assistindo? "Sair" pra ele é parar de assistir e voltar pro lobby.
+    if (conn.spectatingRoomId) {
+      this.stopSpectating(conn);
+      conn.send({ type: 'leftRoom' });
+      this.sendRoomListTo(conn);
+      return;
+    }
     if (!conn.roomId) return;
     const roomId = conn.roomId;
     const r = this.rooms.get(roomId);
@@ -533,6 +556,79 @@ export class Lobby {
     room.fog = !!fog;
     this.touch(room);
     this.broadcastRoomState(room.id);
+  }
+
+  /** Host liga/desliga a TRANSMISSÃO (deixar gente de fora assistir).
+   *  Diferente dos outros chips, vale TAMBÉM com a partida em andamento: se o
+   *  host desmarcar no meio, quem está assistindo é mandado embora na hora. */
+  private setBroadcast(conn: Connection, on: boolean): void {
+    if (!conn.roomId) return;
+    const room = this.rooms.get(conn.roomId);
+    if (!room || room.hostId !== conn.id) return;
+    room.broadcast = !!on;
+    if (!room.broadcast && room.game) {
+      for (const id of [...room.game.spectators]) {
+        room.game.removeSpectator(id);
+        const c = this.conns.get(id);
+        if (c) {
+          c.spectatingRoomId = null;
+          c.send({ type: 'spectateEnded', reason: 'closed' });
+          c.send({ type: 'roomList', rooms: this.roomSummaries() });
+        }
+      }
+    }
+    this.touch(room);
+    this.broadcastRoomState(room.id);
+    this.broadcastRoomListToLobbyClients();
+  }
+
+  /** Entra numa partida EM ANDAMENTO só pra assistir. Não vira membro da sala
+   *  (não ocupa vaga, não conta pra vitória): por isso `conn.roomId` fica null e
+   *  todo caminho de jogar já o barra sozinho. */
+  private spectate(conn: Connection, roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room || !room.inGame || !room.game) {
+      conn.send({ type: 'error', code: 'err.spectate_unavailable' });
+      return;
+    }
+    if (!room.broadcast) {
+      conn.send({ type: 'error', code: 'err.spectate_closed' });
+      return;
+    }
+    // Já estava numa sala (esperando ou jogando)? Sai dela antes — assistir e
+    // jogar ao mesmo tempo não faz sentido e deixaria vaga fantasma.
+    if (conn.roomId) this.removeFromRoom(conn, conn.roomId);
+    if (conn.spectatingRoomId) this.stopSpectating(conn);
+    if (!room.game.addSpectator(conn.id)) {
+      conn.send({ type: 'error', code: 'err.spectate_unavailable' });
+      return;
+    }
+    conn.spectatingRoomId = roomId;
+
+    // Mesmo `gameStart` de um jogador, com `spectating` — o cliente usa isso pra
+    // revelar o mapa e esconder os painéis. `you` é o id da conexão, que NÃO
+    // corresponde a jogador nenhum (então nada fica selecionável/controlável).
+    const infos = [...room.game.players.values()].map((p) => ({
+      id: p.id, name: p.name, color: p.color, team: p.team,
+    }));
+    conn.send({
+      type: 'gameStart',
+      map: room.game.map,
+      players: infos,
+      you: conn.id,
+      fog: false, // espectador vê o mapa todo (é o ponto de assistir)
+      spectating: true,
+    });
+    this.broadcastRoomListToLobbyClients();
+  }
+
+  /** Sai do modo espectador (voltou pro lobby, caiu, ou a transmissão fechou). */
+  private stopSpectating(conn: Connection): void {
+    const id = conn.spectatingRoomId;
+    conn.spectatingRoomId = null;
+    if (!id) return;
+    this.rooms.get(id)?.game?.removeSpectator(conn.id);
+    this.broadcastRoomListToLobbyClients();
   }
 
   /** Host escolhe o terreno (Clássico com lagos, ou Rio com vaus e peixes). */
@@ -683,6 +779,18 @@ export class Lobby {
   private onGameOver(roomId: string): void {
     const room = this.rooms.get(roomId);
     if (!room) return;
+    // Quem estava assistindo volta pro lobby: a partida que ele acompanhava
+    // acabou, e sem isto ele ficaria numa tela congelada pra sempre.
+    if (room.game) {
+      for (const id of [...room.game.spectators]) {
+        room.game.removeSpectator(id);
+        const c = this.conns.get(id);
+        if (!c) continue;
+        c.spectatingRoomId = null;
+        c.send({ type: 'spectateEnded', reason: 'gameOver' });
+        c.send({ type: 'roomList', rooms: this.roomSummaries() });
+      }
+    }
     if (room.game) room.game.stop();
     room.game = null;
     room.inGame = false;
@@ -753,6 +861,10 @@ export class Lobby {
       playerCount: r.members.size,
       maxPlayers: MAX_PLAYERS_PER_ROOM,
       inGame: r.inGame,
+      // Partida rolando + host transmitindo => o cliente mostra "Assistir" no
+      // lugar do "Entrar" desabilitado.
+      canSpectate: r.inGame && r.broadcast && !!r.game,
+      spectators: r.game?.spectators.size ?? 0,
     }));
     // Salas reais primeiro (as que dá pra entrar ficam no topo); vitrine embaixo.
     return [...real, ...generateFakeRooms(Date.now(), MAX_PLAYERS_PER_ROOM)];
@@ -787,7 +899,7 @@ export class Lobby {
         team: m.team,
       };
     });
-    const msg: ServerMessage = { type: 'roomState', roomId, players, mode: room.mode, fog: room.fog, terrain: room.terrain };
+    const msg: ServerMessage = { type: 'roomState', roomId, players, mode: room.mode, fog: room.fog, terrain: room.terrain, broadcast: room.broadcast };
     for (const m of room.members.values()) this.conns.get(m.id)?.send(msg);
   }
 }

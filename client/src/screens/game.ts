@@ -39,6 +39,11 @@ export class GameScreen {
   private connLost: ConnLostOverlay;
   private pauseOverlay!: HTMLElement;
   private pauseBy!: HTMLElement;
+  /** "👁 N assistindo" — só existe pra quem JOGA. */
+  private watchBadge: HTMLElement | null = null;
+  /** Aviso de derrota com a partida ainda rolando (Assistir / Sair). */
+  private defeatOverlay: HTMLElement | null = null;
+  private avisouDerrota = false;
 
   private rafId = 0;
   private resizeObserver: ResizeObserver | null = null;
@@ -56,11 +61,19 @@ export class GameScreen {
   private workListenY = Number.NaN;
   private workListenSince = 0;
 
-  constructor(map: MapData, players: PlayerInfo[], you: number, private deps: GameScreenDeps, fogEnabled = false) {
-    this.state = new GameState(map, players, you, fogEnabled);
+  /** Só ASSISTINDO: sem vaga, sem unidades, sem comando. O controle já é inerte
+   *  por si (nada é "meu"), então isto serve pra ARRUMAR A TELA — revelar o mapa
+   *  e esconder painéis que ficariam vazios pra sempre. */
+  private readonly spectating: boolean;
+
+  constructor(map: MapData, players: PlayerInfo[], you: number, private deps: GameScreenDeps, fogEnabled = false, spectating = false) {
+    this.spectating = spectating;
+    // Espectador vê o mapa todo (é o ponto de assistir) — a névoa é desligada.
+    this.state = new GameState(map, players, you, spectating ? false : fogEnabled);
     const gs = this.state;
 
     this.el = el('div', 'screen');
+    if (spectating) this.el.classList.add('spectating');
     this.el.style.cursor = 'default';
     const root = el('div', '');
     root.id = 'game-root';
@@ -108,6 +121,49 @@ export class GameScreen {
     pbox.appendChild(el('div', 'pause-hint', t('pause.hint')));
     this.pauseOverlay.appendChild(pbox);
     root.appendChild(this.pauseOverlay);
+
+    // DERROTA com a partida CONTINUANDO (ex.: 3 jogadores e você caiu primeiro).
+    // Antes o cliente ignorava a própria derrota: o jogador ficava olhando uma
+    // tela onde não tinha mais nada, sem saber que já tinha perdido, até a
+    // partida acabar. Agora avisa e deixa escolher: fica vendo o resto, ou sai.
+    if (!spectating) {
+      this.defeatOverlay = el('div', 'pause-overlay hidden');
+      const dbox = el('div', 'pause-box');
+      dbox.appendChild(el('div', 'pause-title', t('defeat.title')));
+      dbox.appendChild(el('div', 'pause-by', t('defeat.desc')));
+      const acoes = el('div', 'defeat-actions');
+      const bVer = el('button', 'btn primary', t('defeat.watch'));
+      bVer.addEventListener('click', () => {
+        this.defeatOverlay?.classList.add('hidden');
+        // Vira espectador da própria partida: revela o mapa e esconde os painéis
+        // (ele não tem mais unidade nem recurso — ficariam zerados na tela).
+        this.state.fog.revealAll();
+        this.el.classList.add('spectating');
+      });
+      const bSair = el('button', 'btn', t('defeat.leave'));
+      bSair.addEventListener('click', () => this.deps.onBackToLobby());
+      acoes.appendChild(bVer);
+      acoes.appendChild(bSair);
+      dbox.appendChild(acoes);
+      this.defeatOverlay.appendChild(dbox);
+      root.appendChild(this.defeatOverlay);
+    }
+
+    // ESPECTADOR: faixa dizendo que ele está só assistindo (no lugar da barra de
+    // recursos, que o CSS esconde — ela mostraria 0/0 pra quem não é jogador).
+    if (spectating) {
+      const faixa = el('div', 'spectator-banner');
+      faixa.appendChild(el('span', 'eye', '👁'));
+      faixa.appendChild(el('span', '', t('spec.watching')));
+      const nomes = players.map((p) => p.name).join('  ·  ');
+      if (nomes) faixa.appendChild(el('span', 'who', nomes));
+      root.appendChild(faixa);
+    } else {
+      // JOGADOR: aviso de quantos estão olhando. Ninguém deve ser observado sem
+      // saber — mesmo que o espectador não veja os recursos.
+      this.watchBadge = el('div', 'watch-badge hidden');
+      root.appendChild(this.watchBadge);
+    }
 
     this.renderer = new Renderer(gs);
 
@@ -361,6 +417,8 @@ export class GameScreen {
       this.input.tick(now);
       this.playEventSounds(now);
       this.hud.update();
+      this.updateWatchBadge();
+      this.checkDefeat();
       if (this.ctx) {
         const dpr = (window.devicePixelRatio || 1) * this.renderScale;
         this.renderer.draw(this.ctx, this.cam, this.input.ui, dpr, now);
@@ -369,6 +427,29 @@ export class GameScreen {
       this.rafId = requestAnimationFrame(frame);
     };
     this.rafId = requestAnimationFrame(frame);
+  }
+
+  /** Fui derrotado e a partida continua? Avisa UMA vez e deixa escolher entre
+   *  assistir o resto ou sair. (Quando a partida acaba de vez chega o `gameOver`,
+   *  que abre a tela de fim — outro caminho.) */
+  private checkDefeat(): void {
+    if (this.avisouDerrota || !this.defeatOverlay) return;
+    if (!this.state.me()?.defeated) return;
+    this.avisouDerrota = true;
+    this.defeatOverlay.classList.remove('hidden');
+  }
+
+  /** "👁 N assistindo" pra quem joga. Só toca o DOM quando o número muda —
+   *  escrever texto 60x por segundo à toa é desperdício. */
+  private lastWatchers = -1;
+  private updateWatchBadge(): void {
+    const b = this.watchBadge;
+    if (!b) return;
+    const n = this.state.spectatorCount;
+    if (n === this.lastWatchers) return;
+    this.lastWatchers = n;
+    b.classList.toggle('hidden', n <= 0);
+    if (n > 0) b.textContent = t('spec.badge', { n });
   }
 
   addChat(from: string, text: string): void {

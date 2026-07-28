@@ -108,6 +108,11 @@ export class Game {
   private timer: ReturnType<typeof setInterval> | null = null;
   private ended = false;
   readonly botIds = new Set<number>();
+  /** Quem está só ASSISTINDO. Fica FORA de `players` de propósito: espectador
+   *  não tem vaga, não conta pra vitória, não recebe comando e não pode ser
+   *  atacado. A única coisa que ele ganha é uma cópia do snapshot — e uma cópia
+   *  MAGRA, sem a economia de ninguém (ver `broadcastSnapshot`). */
+  readonly spectators = new Set<number>();
   /** Preços do mercado (ouro por lote de 100) — da SALA, movem com as trocas. */
   private marketPrices: MarketPrices = {
     food: MARKET_START_PRICE,
@@ -193,6 +198,11 @@ export class Game {
   }
 
   enqueueCommand(playerId: number, cmd: GameCommand): void {
+    // Espectador não joga. Na prática os comandos dele já morreriam sozinhos
+    // (não é dono de nada, e `ownedUnits` devolveria lista vazia), mas a trava é
+    // explícita: assim ninguém precisa AUDITAR cada comando novo pra saber se
+    // vazou algum caminho que não checa posse.
+    if (this.spectators.has(playerId)) return;
     this.queue.push({ playerId, cmd });
   }
 
@@ -353,8 +363,49 @@ export class Game {
       sheep: sheepSnap,
       players: playersSnap,
       market: { ...this.marketPrices },
+      // Quem está jogando merece saber que está sendo observado.
+      ...(this.spectators.size > 0 ? { spectators: this.spectators.size } : {}),
     };
     for (const p of this.players.values()) this.send(p.id, msg);
+
+    // ESPECTADORES: mesma partida, pacote MAGRO. Sai a economia (recursos, techs,
+    // progresso de era, preços do mercado) — o espectador vê a ação, não os
+    // números. Isso é no SERVIDOR de propósito: o dado não sai daqui, então nem
+    // um cliente modificado consegue ler o ouro de quem está jogando.
+    //
+    // Montado SÓ se houver alguém assistindo: sem espectador, custo zero (mesma
+    // regra dos temporizadores sob demanda da coleção de jogos).
+    //
+    // São 2 serializações no TOTAL, não uma por pessoa — o `safeSend` memoriza o
+    // JSON por objeto de mensagem. Medido: ~200 µs a mais por snapshot com
+    // alguém assistindo, ou 0,1% de um núcleo. (Dava pra colar os dois JSON à
+    // mão e serializar as listas grandes uma única vez, mas montar JSON na mão
+    // por 0,1% de CPU não vale o risco de gerar texto inválido.)
+    if (this.spectators.size === 0) return;
+    const magro: ServerMessage = {
+      type: 'snapshot',
+      tick: this.tick,
+      units: unitsSnap,
+      buildings: buildingsSnap,
+      nodes: nodesSnap,
+      sheep: sheepSnap,
+      players: playersSnap.map((p) => ({
+        id: p.id, pop: p.pop, popCap: p.popCap, defeated: p.defeated, age: p.age,
+      })),
+    };
+    for (const id of this.spectators) this.send(id, magro);
+  }
+
+  /** Entra como espectador. Devolve false se o id já está jogando (um jogador
+   *  não assiste a própria partida — ele já recebe tudo). */
+  addSpectator(playerId: number): boolean {
+    if (this.players.has(playerId) || this.ended) return false;
+    this.spectators.add(playerId);
+    return true;
+  }
+
+  removeSpectator(playerId: number): void {
+    this.spectators.delete(playerId);
   }
 
   private unitToSnap(u: Unit): UnitSnap {

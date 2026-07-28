@@ -9,6 +9,8 @@ import { t } from '../i18n';
 export interface LobbyScreenDeps {
   onCreateRoom: () => void;
   onJoinRoom: (roomId: string) => void;
+  /** Entrar numa partida em andamento só pra assistir (não joga). */
+  onSpectate: (roomId: string) => void;
   onRefresh: () => void;
 }
 
@@ -35,6 +37,7 @@ export class LobbyScreen {
   private panel: HTMLElement;
   private listEl!: HTMLElement;
   private rooms: RoomSummary[] = [];
+  private aviso: HTMLElement | null = null;
 
   constructor(private deps: LobbyScreenDeps) {
     this.el = el('div', 'screen lobby-screen');
@@ -76,6 +79,16 @@ export class LobbyScreen {
     this.renderList();
   }
 
+  /** Recado passageiro no topo da lista (ex.: "a transmissão foi encerrada").
+   *  Some sozinho — não é erro, é só contexto de por que você voltou pra cá. */
+  flash(texto: string): void {
+    this.aviso?.remove();
+    const av = el('div', 'lobby-flash', texto);
+    this.aviso = av;
+    this.listEl.parentElement?.insertBefore(av, this.listEl);
+    setTimeout(() => { if (this.aviso === av) { av.remove(); this.aviso = null; } }, 6000);
+  }
+
   private renderList(): void {
     this.listEl.innerHTML = '';
     if (this.rooms.length === 0) {
@@ -87,9 +100,23 @@ export class LobbyScreen {
       const main = el('div', 'lr-main');
       main.appendChild(el('span', 'name', t('lobby.room_of', { host: room.hostName })));
       main.appendChild(el('span', 'info', t('lobby.players_count', { n: room.playerCount, max: room.maxPlayers })));
+      if (room.spectators) {
+        main.appendChild(el('span', 'info watching', t('lobby.watching', { n: room.spectators })));
+      }
       item.appendChild(main);
       const badge = el('span', `badge ${room.inGame ? 'ingame' : 'waiting'}`, room.inGame ? t('lobby.ingame') : t('lobby.waiting'));
       item.appendChild(badge);
+      // Partida rolando com transmissão ligada => "Assistir" no lugar do "Entrar"
+      // desabilitado (que antes era um beco sem saída: dava pra ver a sala e nada
+      // mais). Não dá pra JOGAR numa partida em andamento — só acompanhar.
+      if (room.canSpectate) {
+        const watchBtn = el('button', 'btn watch', t('lobby.watch'));
+        watchBtn.title = t('lobby.watch_tip');
+        watchBtn.addEventListener('click', () => this.deps.onSpectate(room.id));
+        item.appendChild(watchBtn);
+        this.listEl.appendChild(item);
+        continue;
+      }
       const full = room.playerCount >= room.maxPlayers;
       const joinBtn = el('button', 'btn', t('lobby.join'));
       joinBtn.disabled = full || room.inGame;

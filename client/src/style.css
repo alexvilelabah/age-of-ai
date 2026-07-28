@@ -1004,3 +1004,58 @@ button.btn.trade-btn {
   background: var(--gild); color: #231a0a; border-color: var(--g2); font-weight: 700; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 .lobby-screen .empty { color: var(--dim); text-align: center; padding: 26px; font-style: italic; }
+
+/* ===================================================================
+   ASSISTIR (espectador) — quem entrou só pra ver a partida.
+   O controle já é inerte por si (nada é "dele"), então isto aqui só
+   ARRUMA A TELA: esconde o que ficaria vazio pra sempre.
+   =================================================================== */
+/* Barra de recursos: pro espectador ela mostraria 0/0 e "Idade das Trevas"
+   (ele não é jogador nenhum) — e os números dos jogadores nem chegam do
+   servidor. Sai inteira, e no lugar entra a faixa de "assistindo". */
+.screen.spectating .hud-top { display: none; }
+/* Painel de comandos: construir/treinar/pesquisar não existe pra ele. */
+.screen.spectating .cb-left { display: none; }
+/* O painel de seleção FICA: clicar numa unidade e ver o que é faz parte de
+   assistir (como o placar mostrar quem é o jogador). O minimapa também fica —
+   é com ele que se "vai pra lá e pra cá". */
+
+.spectator-banner {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 16px; border-radius: 4px;
+  background: linear-gradient(180deg, rgba(31, 23, 16, 0.92), rgba(20, 15, 9, 0.88));
+  border: 1.5px solid var(--g4); color: var(--cream);
+  font-size: 14px; letter-spacing: 0.03em; pointer-events: none;
+  z-index: 6;
+}
+.spectator-banner .eye { color: var(--g2); }
+.spectator-banner .who { color: var(--parch); }
+
+/* Aviso passageiro no lobby (ex.: "a transmissão foi encerrada"). */
+.lobby-flash {
+  padding: 9px 13px; margin-bottom: 10px; border-radius: 4px;
+  background: rgba(216, 178, 90, 0.1); border: 1px solid var(--g4);
+  color: var(--cream); font-size: 13.5px;
+}
+
+/* Botão "Assistir" na lista de salas: dourado discreto, pra não competir com o
+   "Entrar" das salas em que se pode de fato jogar. */
+.lobby-screen .room-item .btn.watch {
+  flex: 0 0 auto; padding: 8px 20px;
+  border-color: var(--g3); color: var(--g1);
+}
+.lobby-screen .room-item .info.watching { color: var(--g2); }
+
+/* Quantos estão assistindo — mostrado a QUEM JOGA, pra ninguém ser observado
+   sem saber. */
+.watch-badge {
+  position: absolute; top: 10px; right: 12px;
+  padding: 5px 12px; border-radius: 999px;
+  background: rgba(20, 16, 10, 0.82); border: 1px solid var(--g4);
+  color: var(--g1); font-size: 12.5px; pointer-events: none; z-index: 6;
+}
+.watch-badge.hidden { display: none; }
+
+/* Derrota com a partida continuando: dois caminhos (assistir ou sair). */
+.defeat-actions { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }

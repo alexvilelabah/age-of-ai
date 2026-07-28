@@ -40,8 +40,11 @@ export interface SnapshotData {
   nodes: NodeSnap[];
   sheep: SheepSnap[];
   players: PlayerSnap[];
-  /** Preços do mercado (ouro por lote de 100) — globais da sala. */
+  /** Preços do mercado (ouro por lote de 100) — globais da sala.
+   *  Ausente pra quem está assistindo (é informação de economia). */
   market?: MarketPrices;
+  /** Quantos estão assistindo (só chega pros JOGADORES). */
+  spectators?: number;
 }
 
 export type PickResult =
@@ -91,6 +94,9 @@ export class GameState {
   playerSnaps = new Map<number, PlayerSnap>();
   /** Preços do mercado (ouro por lote de 100), atualizados por snapshot. */
   marketPrices: MarketPrices = { food: 100, wood: 100, stone: 100 };
+  /** Quantos estão assistindo esta partida (0 se ninguém). Só chega pra quem
+   *  JOGA — é o aviso de que há gente olhando. */
+  spectatorCount = 0;
 
   /** Ids selecionados (unidades próprias, ou 1 prédio, ou 1 entidade para info). */
   selection = new Set<number>();
@@ -190,6 +196,7 @@ export class GameState {
 
     this.tick = typeof snap.tick === 'number' ? snap.tick : this.tick;
     if (snap.market) this.marketPrices = snap.market;
+    this.spectatorCount = snap.spectators ?? 0;
 
     // --- deltas de combate (dano/morte) comparando com o snapshot anterior ---
     const now = this.snapTime;

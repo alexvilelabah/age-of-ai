@@ -113,6 +113,7 @@ const nameScreen = new NameScreen({
 const lobbyScreen = new LobbyScreen({
   onCreateRoom: () => net.send({ type: 'createRoom' }),
   onJoinRoom: (roomId) => net.send({ type: 'joinRoom', roomId }),
+  onSpectate: (roomId) => net.send({ type: 'spectate', roomId }),
   onRefresh: () => net.send({ type: 'listRooms' }),
 });
 
@@ -133,6 +134,7 @@ const roomScreen = new RoomScreen({
   onSetTeam: (playerId, team) => net.send({ type: 'setTeam', playerId, team }),
   onSetMode: (mode) => net.send({ type: 'setMode', mode }),
   onSetFog: (fog) => net.send({ type: 'setFog', fog }),
+  onSetBroadcast: (on) => net.send({ type: 'setBroadcast', on }),
   onSetTerrain: (terrain) => net.send({ type: 'setTerrain', terrain }),
   onSetBotDifficulty: (botId, difficulty) => net.send({ type: 'setBotDifficulty', botId, difficulty }),
 });
@@ -236,7 +238,7 @@ function dispatch(msg: ServerMessage): void {
     }
     case 'roomState': {
       lastRoomPlayers = Array.isArray(msg.players) ? msg.players : [];
-      roomScreen.setState(msg.roomId, lastRoomPlayers, myPlayerId, msg.mode, msg.fog, msg.terrain);
+      roomScreen.setState(msg.roomId, lastRoomPlayers, myPlayerId, msg.mode, msg.fog, msg.terrain, msg.broadcast);
       // Ignora troca de tela enquanto o overlay de fim de jogo está visível: o
       // servidor manda 'roomState' logo após 'gameOver' (reset do lobby), mas o
       // jogador ainda não confirmou "Voltar ao lobby" — trocar de tela agora
@@ -293,8 +295,17 @@ function dispatch(msg: ServerMessage): void {
           showScreen('lobby');
           net.send({ type: 'listRooms' });
         },
-      }, msg.fog);
+      }, msg.fog, msg.spectating);
       showScreen('game');
+      break;
+    }
+    case 'spectateEnded': {
+      // A transmissão fechou (host desmarcou) ou a partida acabou: volta pro
+      // lobby com um aviso, em vez de deixar a tela congelada pra sempre.
+      teardownGame();
+      gameOverScreen.hide();
+      showScreen('lobby');
+      lobbyScreen.flash(t(msg.reason === 'gameOver' ? 'lobby.spectate_over' : 'lobby.spectate_closed'));
       break;
     }
     case 'gamePaused': {
@@ -316,6 +327,7 @@ function dispatch(msg: ServerMessage): void {
           sheep: msg.sheep,
           players: msg.players,
           market: msg.market,
+          spectators: msg.spectators,
         });
       }
       break;

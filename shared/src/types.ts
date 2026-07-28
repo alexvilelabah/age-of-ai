@@ -106,16 +106,20 @@ export interface SheepSnap {
 
 export interface PlayerSnap {
   id: number;
-  resources: Resources;
+  /** AUSENTE pra quem está só ASSISTINDO: o espectador vê a ação, não a
+   *  economia. Não é enfeite de tela — o dado não sai do servidor, então nem
+   *  um cliente modificado consegue ler o ouro de quem está jogando. */
+  resources?: Resources;
   pop: number;
   popCap: number;
   defeated: boolean;
   /** Era atual (1..MAX_AGE). */
   age: number;
-  /** Progresso 0..1 da pesquisa da próxima era (ausente se não pesquisando). */
+  /** Progresso 0..1 da pesquisa da próxima era (ausente se não pesquisando,
+   *  e sempre ausente pro espectador). */
   ageProgress?: number;
-  /** Ids das tecnologias já pesquisadas. */
-  techs: string[];
+  /** Ids das tecnologias já pesquisadas. Ausente pro espectador. */
+  techs?: string[];
 }
 
 export interface PlayerInfo {
