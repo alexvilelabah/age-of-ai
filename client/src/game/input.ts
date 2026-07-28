@@ -641,9 +641,31 @@ export class GameInput {
     if (b && b.owner === this.gs.you) {
       const def = BUILDING_DEFS[b.type];
       if (def && def.trains.length > 0) {
+        // MIRA NO TILE DO RECURSO, não no ponto cru do clique. O clique é
+        // "visual": dá pra acertar a COPA da árvore, que fica até ~1,9 tiles
+        // acima do tronco na diagonal. O servidor procura o recurso no tile do
+        // ponto recebido — mandando o ponto cru, ele caía num tile VIZINHO, não
+        // achava árvore nenhuma, e o aldeão novo só andava até lá e parava sem
+        // colher. (Mesma armadilha do clique no Centro: o que se VÊ não é o
+        // tile onde a coisa ESTÁ.)
+        const alvo = this.gs.pickAt(w.x, w.y, performance.now());
+        let rx = w.x, ry = w.y, marcaId: number | undefined;
+        if (alvo?.kind === 'node') {
+          rx = alvo.node.tileX + 0.5;
+          ry = alvo.node.tileY + 0.5;
+          marcaId = alvo.node.id;
+        } else if (alvo?.kind === 'building' && alvo.building.type === 'farm' && alvo.building.owner === this.gs.you) {
+          const fs = BUILDING_DEFS.farm.size;
+          rx = alvo.building.tileX + fs / 2;
+          ry = alvo.building.tileY + fs / 2;
+          marcaId = alvo.building.id;
+        }
+        // Mesmo retorno visual de quando se manda um aldeão pronto colher: o anel
+        // verde no chão do alvo. Sem ele não dava pra saber se a ordem pegou.
+        this.mark(marcaId !== undefined ? 'gather' : 'move', rx, ry, marcaId);
         const targets = this.gs.selectedOwnBuildings().filter((bb) => bb.type === b.type && (bb.progress ?? 1) >= 1);
         for (const bb of targets.length ? targets : [b]) {
-          this.cmd({ kind: 'setRally', buildingId: bb.id, x: w.x, y: w.y });
+          this.cmd({ kind: 'setRally', buildingId: bb.id, x: rx, y: ry });
         }
       }
     }

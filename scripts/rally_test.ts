@@ -14,6 +14,8 @@ const tc = { id: 1, owner: 1, type: 'town_center', tileX: 5, tileY: 5, hp: 1000,
 g.buildings.set(tc.id, tc);
 const bush = { id: 50, type: 'berry_bush', tileX: 12, tileY: 12, amount: 200 };
 g.nodes.set(bush.id, bush);
+const tree = { id: 51, type: 'tree', tileX: 20, tileY: 20, amount: 100 };
+g.nodes.set(tree.id, tree);
 
 let pass = 0, fail = 0;
 const check = (label: string, ok: boolean) => { console.log(`${ok ? 'PASS' : 'FAIL'} - ${label}`); ok ? pass++ : fail++; };
@@ -42,6 +44,27 @@ check('rally na borda (12.1): aldeão colhe COMIDA', !!v && v.gatherResource ===
 // rally num ponto SEM recurso: aldeão só anda (não inventa coleta)
 v = trial(30.5, 30.5);
 check('rally em chão vazio: NÃO tenta colher', !!v && v.gatherResource === undefined);
+
+// --- ARVORE (lenha): o caso que o dono achou jogando ---------------------
+// O aldeao novo saia do Centro e ficava parado em vez de cortar. A causa NAO era
+// aqui — era o CLIENTE mandando o PONTO DO CLIQUE em vez do tile da arvore.
+// Clique de arvore e "visual": da pra acertar a COPA, que fica ate ~1,9 tiles
+// acima do tronco na diagonal (medido). O tile do ponto clicado caia no VIZINHO,
+// ali nao havia no nenhum, e o aldeao so andava ate lá.
+//
+// Estes checks travam os dois lados: com o tile CERTO ele corta; com o tile
+// errado ele (corretamente) nao inventa coleta — e e por isso que o cliente
+// PRECISA mandar o tile do recurso, nao o ponto do clique.
+v = trial(20.5, 20.5);
+check('rally no centro da ARVORE: aldeao corta LENHA', !!v && v.gatherResource === 'wood' && v.gatherTargetId === tree.id);
+
+v = trial(20.9, 20.1);
+check('rally na borda da ARVORE: aldeao corta LENHA', !!v && v.gatherResource === 'wood' && v.gatherTargetId === tree.id);
+
+// o tile VIZINHO (o que o clique na copa produzia): sem no, nao colhe — prova de
+// que mandar o ponto cru do clique era mesmo o que quebrava.
+v = trial(19.5, 19.5);
+check('rally no tile VIZINHO da arvore: NAO colhe (era o bug do clique na copa)', !!v && v.gatherResource === undefined);
 
 console.log(fail === 0 ? '\nTODOS OS TESTES DE RALLY PASSARAM' : `\n${fail} FALHA(S)`);
 process.exit(fail === 0 ? 0 : 1);
