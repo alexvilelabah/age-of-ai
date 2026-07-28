@@ -36,11 +36,14 @@ fallback da SPA. Sem isso, qualquer URL errada devolveria 200 com a página do A
 
 ## Onde mora cada projeto (fonte de verdade)
 
-| Projeto | Pasta no PC | Git? | Papel |
+| Projeto | Pasta no PC | Git | Papel |
 |---|---|---|---|
-| **Age of AI** (o servidor de tudo) | `D:\age` | ✅ [GitHub](https://github.com/alexvilelabah/age-of-ai) | jogo + servidor HTTP/WS |
-| **Coleção de jogos** | `D:\projetos\jogos-html` | ❌ | gera a pasta `online-games/` (ver `DEPLOY.md` de lá) |
-| **Cube Range** (jogo de tiro) | `D:\projetos\tiro` | ❌ | fonte do único jogo próprio da coleção |
+| **Age of AI** (o servidor de tudo) | `D:\age` | ✅ + [GitHub](https://github.com/alexvilelabah/age-of-ai) | jogo + servidor HTTP/WS |
+| **Coleção de jogos** | `D:\projetos\jogos-html` | ✅ local | gera a pasta `online-games/` (ver `DEPLOY.md` de lá) |
+| **Cube Range** (jogo de tiro) | `D:\projetos\tiro` | ✅ local | fonte do único jogo próprio da coleção |
+
+Só o Age of AI vai pro GitHub — **de propósito**. Os outros dois têm git **local**, que
+protege contra apagar/estragar sem querer, mas **não** contra o disco morrer.
 
 A pasta `online-games/` fica no `.gitignore` deste repo de propósito (~50 MB de conteúdo de
 terceiros). Ela chega no celular por **cópia pelo cabo**, não por `git pull`.
@@ -114,10 +117,13 @@ a causa das duas vezes.
 
 ## Riscos conhecidos (ainda não resolvidos)
 
-1. **A coleção publicada (~50 MB) não tem cópia versionada em lugar nenhum.** Existe só no
-   celular e num `.zip` no PC. Se o Termux for limpo, some. ← *maior risco de perda hoje*
-2. **`D:\projetos\tiro` não é git**, e a cópia publicada dele fica **atrasada** em relação ao
-   fonte (a sincronização entre as duas pastas é manual).
+1. **Não existe backup FORA deste PC** (tirando o Age of AI, que está no GitHub). Os três
+   projetos têm git, mas dois só localmente — se o disco morrer, morre junto. Resolver é
+   fácil: um repositório **privado** no GitHub para cada um, ou uma cópia num HD/nuvem.
+   ← *maior risco de perda hoje*
+2. **A cópia publicada do Cube Range fica atrasada** em relação ao fonte de
+   `D:\projetos\tiro` — a sincronização entre as duas pastas é **manual** (já houve trabalho
+   pronto que nunca foi ao ar). Ver o `LEIA-ME.md` de lá.
 3. **`D:\projetos\tiro\server.js` é um duplicado morto** do multiplayer real: protocolo
    divergente (ignora tiro e dano) e não usado em produção — o jogo publicado usa
    `/online-games/ws/<slug>`. Serve só para abrir o jogo por `file://`.
