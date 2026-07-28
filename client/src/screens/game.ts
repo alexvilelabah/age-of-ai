@@ -44,6 +44,8 @@ export class GameScreen {
   /** Aviso de derrota com a partida ainda rolando (Assistir / Sair). */
   private defeatOverlay: HTMLElement | null = null;
   private avisouDerrota = false;
+  /** Aviso de "acabou o que você assistia" (Continuar olhando / Voltar). */
+  private specEndOverlay: HTMLElement | null = null;
 
   private rafId = 0;
   private resizeObserver: ResizeObserver | null = null;
@@ -65,6 +67,9 @@ export class GameScreen {
    *  por si (nada é "meu"), então isto serve pra ARRUMAR A TELA — revelar o mapa
    *  e esconder painéis que ficariam vazios pra sempre. */
   private readonly spectating: boolean;
+  /** Estou só assistindo? (o main usa pra não dizer "você desistiu" a quem
+   *  nunca esteve jogando.) */
+  get isSpectating(): boolean { return this.spectating; }
 
   constructor(map: MapData, players: PlayerInfo[], you: number, private deps: GameScreenDeps, fogEnabled = false, spectating = false) {
     this.spectating = spectating;
@@ -427,6 +432,32 @@ export class GameScreen {
       this.rafId = requestAnimationFrame(frame);
     };
     this.rafId = requestAnimationFrame(frame);
+  }
+
+  /** Acabou o que eu estava assistindo. Mostra O QUE aconteceu e deixa escolher:
+   *  continuar olhando o tabuleiro final, ou voltar pro lobby. Quem assiste não é
+   *  arrancado da tela — foi justamente esse buraco (nenhum aviso, tela
+   *  congelada) que apareceu no primeiro teste de verdade. */
+  showSpectateEnd(motivo: string): void {
+    if (this.specEndOverlay) { // já avisado (ex.: dois eventos seguidos)
+      this.specEndOverlay.classList.remove('hidden');
+      return;
+    }
+    const ov = el('div', 'pause-overlay');
+    const box = el('div', 'pause-box');
+    box.appendChild(el('div', 'pause-title', t('spec.end_title')));
+    box.appendChild(el('div', 'pause-by', motivo));
+    const acoes = el('div', 'defeat-actions');
+    const ficar = el('button', 'btn', t('spec.end_stay'));
+    ficar.addEventListener('click', () => ov.classList.add('hidden'));
+    const sair = el('button', 'btn primary', t('spec.end_leave'));
+    sair.addEventListener('click', () => this.deps.onBackToLobby());
+    acoes.appendChild(ficar);
+    acoes.appendChild(sair);
+    box.appendChild(acoes);
+    ov.appendChild(box);
+    this.specEndOverlay = ov;
+    this.el.querySelector('#game-root')?.appendChild(ov);
   }
 
   /** Fui derrotado e a partida continua? Avisa UMA vez e deixa escolher entre

@@ -143,9 +143,14 @@ export type ServerMessage =
        *  observado sem saber. */
       spectators?: number;
     }
-  // A transmissão foi fechada pelo host (ou a partida acabou) — quem estava
-  // assistindo volta pro lobby com um aviso.
-  | { type: 'spectateEnded'; reason: 'closed' | 'gameOver' }
+  // Acabou o que se estava assistindo. NÃO tira o espectador da tela na força:
+  // ele vê o que aconteceu e decide se continua olhando o tabuleiro final ou se
+  // volta pro lobby (era o buraco: quando o último humano desistia, a sala era
+  // apagada e quem assistia ficava congelado pra sempre, sem aviso nenhum).
+  //   'gameOver'    — a partida terminou normalmente (`winnerName` = quem ganhou)
+  //   'surrendered' — `who` desistiu e por isso a partida acabou
+  //   'closed'      — o host fechou a transmissão (a partida pode seguir)
+  | { type: 'spectateEnded'; reason: 'closed' | 'gameOver' | 'surrendered'; winnerName?: string; who?: string }
   // `won` (opcional) diz se VOCÊ venceu — necessário em times (vitória em dupla).
   | { type: 'gameOver'; winner: number; winnerName: string; won?: boolean }
   // Partida pausada/retomada (para TODOS da sala). `by` = quem mexeu (mostra na tela).

@@ -80,11 +80,17 @@ const settingsOverlay = new SettingsOverlay({
   // servidor confirma com leftRoom e, se um gameOver chegar atrasado, o guard ignora.
   onLeaveRoom: () => {
     settingsOverlay.hide();
+    const eraPartida = current === 'game';
+    const soAssistindo = gameScreen?.isSpectating ?? false;
     net.send({ type: 'leaveRoom' });
     gameOverScreen.hide();
     teardownGame();
     showScreen('lobby');
     net.send({ type: 'listRooms' });
+    // Sair NO MEIO da partida conta como DERROTA (o adversário ganha). Dizer isso
+    // ao chegar no lobby fecha o ciclo: antes o jogador saía e nada confirmava o
+    // que tinha acontecido. Recado passageiro, não modal — ele PEDIU pra sair.
+    if (eraPartida && !soAssistindo) lobbyScreen.flash(t('lobby.gave_up'));
   },
 });
 document.body.appendChild(settingsOverlay.el);
@@ -300,12 +306,16 @@ function dispatch(msg: ServerMessage): void {
       break;
     }
     case 'spectateEnded': {
-      // A transmissão fechou (host desmarcou) ou a partida acabou: volta pro
-      // lobby com um aviso, em vez de deixar a tela congelada pra sempre.
-      teardownGame();
-      gameOverScreen.hide();
-      showScreen('lobby');
-      lobbyScreen.flash(t(msg.reason === 'gameOver' ? 'lobby.spectate_over' : 'lobby.spectate_closed'));
+      if (current !== 'game') break;
+      // NÃO arranca o espectador da tela: mostra o que aconteceu e deixa ELE
+      // decidir entre olhar o tabuleiro final ou voltar pro lobby. (Antes o
+      // caminho da desistência não avisava nada e ele ficava congelado.)
+      const motivo =
+        msg.reason === 'surrendered' ? t('spec.end_surrender', { who: msg.who ?? '?' })
+        : msg.reason === 'closed' ? t('spec.end_closed')
+        : msg.winnerName ? t('spec.end_winner', { winner: msg.winnerName })
+        : t('spec.end_over');
+      gameScreen?.showSpectateEnd(motivo);
       break;
     }
     case 'gamePaused': {

@@ -448,7 +448,13 @@ export class Lobby {
     room.members.delete(conn.id);
     const humansLeft = [...room.members.values()].some((m) => !m.isBot);
     if (!humansLeft) {
-      // sem humanos: encerra e remove a sala (não deixa bots órfãos)
+      // sem humanos: encerra e remove a sala (não deixa bots órfãos).
+      // ESTE era o caminho que deixava espectador órfão: a sala morre aqui, ANTES
+      // do onGameOver rodar, então quem assistia nunca era avisado e ficava
+      // congelado pra sempre. Avisa quem está vendo, dizendo QUEM desistiu.
+      if (room.inGame && room.game) {
+        this.encerrarEspectadores(room, { reason: 'surrendered', who: conn.name });
+      }
       if (room.game) room.game.stop();
       this.rooms.delete(roomId);
       this.broadcastRoomListToLobbyClients();
@@ -566,17 +572,7 @@ export class Lobby {
     const room = this.rooms.get(conn.roomId);
     if (!room || room.hostId !== conn.id) return;
     room.broadcast = !!on;
-    if (!room.broadcast && room.game) {
-      for (const id of [...room.game.spectators]) {
-        room.game.removeSpectator(id);
-        const c = this.conns.get(id);
-        if (c) {
-          c.spectatingRoomId = null;
-          c.send({ type: 'spectateEnded', reason: 'closed' });
-          c.send({ type: 'roomList', rooms: this.roomSummaries() });
-        }
-      }
-    }
+    if (!room.broadcast) this.encerrarEspectadores(room, { reason: 'closed' });
     this.touch(room);
     this.broadcastRoomState(room.id);
     this.broadcastRoomListToLobbyClients();
@@ -619,6 +615,30 @@ export class Lobby {
       fog: false, // espectador vê o mapa todo (é o ponto de assistir)
       spectating: true,
     });
+    this.broadcastRoomListToLobbyClients();
+  }
+
+  /** Avisa e solta TODOS os espectadores de uma sala. ÚNICO lugar que faz isso —
+   *  de propósito: quando estava espalhado, um caminho ficou de fora (o
+   *  `removeFromRoom` apaga a sala quando o último humano desiste, e os
+   *  espectadores ficavam órfãos, congelados pra sempre sem aviso nenhum).
+   *  Quem chamar aqui não precisa lembrar de nada além de chamar.
+   *
+   *  NÃO manda a lista de salas: o cliente decide quando sair da tela (ele pode
+   *  querer olhar o tabuleiro final). O `leftRoom`/`listRooms` vem do botão. */
+  private encerrarEspectadores(
+    room: Room,
+    info: { reason: 'closed' | 'gameOver' | 'surrendered'; winnerName?: string; who?: string },
+  ): void {
+    const g = room.game;
+    if (!g || g.spectators.size === 0) return;
+    for (const id of [...g.spectators]) {
+      g.removeSpectator(id);
+      const c = this.conns.get(id);
+      if (!c) continue;
+      c.spectatingRoomId = null;
+      c.send({ type: 'spectateEnded', ...info });
+    }
     this.broadcastRoomListToLobbyClients();
   }
 
@@ -759,7 +779,7 @@ export class Lobby {
         const c = this.conns.get(playerId);
         if (c) c.send(msg);
       },
-      () => this.onGameOver(room.id),
+      (_winner, winnerName) => this.onGameOver(room.id, winnerName),
       room.mode,
       room.terrain,
     );
@@ -776,21 +796,12 @@ export class Lobby {
     game.start();
   }
 
-  private onGameOver(roomId: string): void {
+  private onGameOver(roomId: string, winnerName = ''): void {
     const room = this.rooms.get(roomId);
     if (!room) return;
-    // Quem estava assistindo volta pro lobby: a partida que ele acompanhava
-    // acabou, e sem isto ele ficaria numa tela congelada pra sempre.
-    if (room.game) {
-      for (const id of [...room.game.spectators]) {
-        room.game.removeSpectator(id);
-        const c = this.conns.get(id);
-        if (!c) continue;
-        c.spectatingRoomId = null;
-        c.send({ type: 'spectateEnded', reason: 'gameOver' });
-        c.send({ type: 'roomList', rooms: this.roomSummaries() });
-      }
-    }
+    // Quem estava assistindo é avisado de que a partida acabou (e de quem
+    // ganhou) — aí ELE decide se olha o tabuleiro final ou volta pro lobby.
+    if (room.game) this.encerrarEspectadores(room, { reason: 'gameOver', winnerName });
     if (room.game) room.game.stop();
     room.game = null;
     room.inGame = false;

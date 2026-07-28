@@ -19,6 +19,7 @@
 //
 // Roda: npx tsx scripts/spectator_test.ts
 import { Game } from '../server/src/game/room.ts';
+import { Lobby } from '../server/src/lobby.ts';
 
 let pass = 0;
 let fail = 0;
@@ -127,6 +128,46 @@ const snaps = (enviados: { to: number; msg: Msg }[], to: number) =>
   check('DERROTADO continua recebendo snapshot', doDerrotado.length > 0);
   const eu = (doDerrotado[doDerrotado.length - 1].players as { id: number; defeated: boolean }[]).find((p) => p.id === 1);
   check('e o snapshot diz que ele está derrotado', eu?.defeated === true);
+}
+
+// --- O BURACO QUE O DONO ACHOU testando de verdade ---------------------------
+// Quando o último humano DESISTE, a sala é apagada em `removeFromRoom` — ANTES do
+// `onGameOver` rodar. A limpeza de espectadores morava só no onGameOver, então
+// quem assistia nunca era avisado: ficava congelado pra sempre olhando uma
+// partida que já tinha acabado, sem nenhuma mensagem.
+//
+// Este teste usa o Lobby de verdade (não o Game direto), porque o bug estava no
+// caminho da SALA, não do jogo.
+{
+  type Env = { id: number; recebidas: Msg[] };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lobby: any = new Lobby();
+  const conectar = (nome: string): Env => {
+    const recebidas: Msg[] = [];
+    const c = lobby.connect((m: Msg) => recebidas.push(m));
+    lobby.handleMessage(c.id, { type: 'setName', name: nome });
+    return { id: c.id, recebidas };
+  };
+
+  const jog = conectar('Anfitriao');
+  lobby.handleMessage(jog.id, { type: 'createRoom' });
+  const sala = [...jog.recebidas].reverse().find((m) => m.type === 'roomState')?.roomId as string;
+  lobby.handleMessage(jog.id, { type: 'startGame' });
+
+  const esp = conectar('QuemAssiste');
+  lobby.handleMessage(esp.id, { type: 'spectate', roomId: sala });
+  check('espectador entrou pelo Lobby', esp.recebidas.some((m) => m.type === 'gameStart' && m.spectating === true));
+
+  esp.recebidas.length = 0;
+  lobby.handleMessage(jog.id, { type: 'leaveRoom' }); // DESISTE
+
+  const fim = esp.recebidas.find((m) => m.type === 'spectateEnded');
+  check('DESISTÊNCIA avisa quem está assistindo (era o buraco)', !!fim);
+  check('e diz que foi desistência', fim?.reason === 'surrendered');
+  check('e diz QUEM desistiu', fim?.who === 'Anfitriao');
+  // Não pode ser arrancado da tela: o cliente é que decide sair (por isso NÃO
+  // mandamos leftRoom aqui). Ele fica olhando o tabuleiro final se quiser.
+  check('NÃO é expulso na força (sem leftRoom)', !esp.recebidas.some((m) => m.type === 'leftRoom'));
 }
 
 console.log(fail === 0 ? `\nTODOS OS ${pass} TESTES DE ESPECTADOR PASSARAM` : `\n${fail} FALHA(S)`);
