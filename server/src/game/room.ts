@@ -1404,12 +1404,18 @@ export class Game {
           fb.type === 'farm' && fb.owner === b.owner && fb.progress >= 1 &&
           rx >= fb.tileX && rx < fb.tileX + fs && ry >= fb.tileY && ry < fb.tileY + fs,
       );
+      // ovelha não tem footprint (é passável) — o tile dela é o floor da posição
+      // contínua, igual ao que o cliente manda ao mirar nela (ver input.ts).
+      const sheepAt = [...this.sheep.values()].find((s) => Math.floor(s.x) === rx && Math.floor(s.y) === ry);
       if (nodeAt && (nodeAt.type === 'fish' ? newUnit.type === 'fishing_boat' : newUnit.type === 'villager')) {
         // ponto de reunião num recurso: aldeão sai colhendo / pesqueiro sai pescando
         this.startGatherNode(newUnit, nodeAt);
       } else if (farmAt && newUnit.type === 'villager') {
         // ponto de reunião numa fazenda: aldeão novo já sai colhendo (AoE2)
         this.startGatherFarm(newUnit, farmAt);
+      } else if (sheepAt && newUnit.type === 'villager' && (sheepAt.owner === b.owner || sheepAt.owner === SHEEP_WILD_OWNER)) {
+        // ponto de reunião numa ovelha: aldeão novo já sai abatendo/pastoreando
+        this.startGatherSheep(newUnit, sheepAt);
       } else {
         this.pathUnitTo(newUnit, b.rallyX, b.rallyY);
         newUnit.state = newUnit.path.length > 0 ? 'moving' : 'idle';

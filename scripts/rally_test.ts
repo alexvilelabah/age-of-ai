@@ -16,6 +16,12 @@ const bush = { id: 50, type: 'berry_bush', tileX: 12, tileY: 12, amount: 200 };
 g.nodes.set(bush.id, bush);
 const tree = { id: 51, type: 'tree', tileX: 20, tileY: 20, amount: 100 };
 g.nodes.set(tree.id, tree);
+const gold = { id: 52, type: 'gold_mine', tileX: 45, tileY: 45, amount: 500 };
+g.nodes.set(gold.id, gold);
+const stone = { id: 53, type: 'stone_mine', tileX: 50, tileY: 50, amount: 500 };
+g.nodes.set(stone.id, stone);
+const sheep = { id: 60, owner: -1, x: 40.5, y: 40.5, food: 100, path: [] as unknown[] };
+g.sheep.set(sheep.id, sheep);
 
 let pass = 0, fail = 0;
 const check = (label: string, ok: boolean) => { console.log(`${ok ? 'PASS' : 'FAIL'} - ${label}`); ok ? pass++ : fail++; };
@@ -65,6 +71,27 @@ check('rally na borda da ARVORE: aldeao corta LENHA', !!v && v.gatherResource ==
 // que mandar o ponto cru do clique era mesmo o que quebrava.
 v = trial(19.5, 19.5);
 check('rally no tile VIZINHO da arvore: NAO colhe (era o bug do clique na copa)', !!v && v.gatherResource === undefined);
+
+// --- OURO e PEDRA: mesmo caminho de codigo da arvore/comida (kind:'node' no
+// cliente e' generico pro tipo), entao ja deveriam funcionar sem mudanca nenhuma
+// aqui no servidor. Travando com teste pra nao virar suposicao. -------------
+v = trial(45.5, 45.5);
+check('rally no centro do OURO: aldeao minera OURO', !!v && v.gatherResource === 'gold' && v.gatherTargetId === gold.id);
+
+v = trial(50.5, 50.5);
+check('rally no centro da PEDRA: aldeao minera PEDRA', !!v && v.gatherResource === 'stone' && v.gatherTargetId === stone.id);
+
+// --- OVELHA: a unica lacuna real (kind:'sheep' e' separado de kind:'node' no
+// pickAt do cliente, e o servidor nao tinha busca de ovelha no ponto de reuniao).
+// Ovelha nao tem tileX/tileY (e passavel, posicao continua) -> tile e' o floor. -
+sheep.owner = -1; // reseta: startGatherSheep muda o dono na hora
+v = trial(40.5, 40.5);
+check('rally na OVELHA: aldeao sai abatendo (comida)', !!v && v.gatherResource === 'food' && v.gatherTargetId === sheep.id);
+check('rally na OVELHA: ela vira do jogador na hora (abate)', sheep.owner === 1);
+
+// tile VIZINHO da ovelha: sem ovelha ali, nao inventa coleta
+v = trial(39.5, 39.5);
+check('rally no tile VIZINHO da ovelha: NAO colhe', !!v && v.gatherResource === undefined);
 
 console.log(fail === 0 ? '\nTODOS OS TESTES DE RALLY PASSARAM' : `\n${fail} FALHA(S)`);
 process.exit(fail === 0 ? 0 : 1);

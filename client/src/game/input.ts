@@ -659,6 +659,12 @@ export class GameInput {
           rx = alvo.building.tileX + fs / 2;
           ry = alvo.building.tileY + fs / 2;
           marcaId = alvo.building.id;
+        } else if (alvo?.kind === 'sheep') {
+          // ovelha não tem tile fixo (é passável): usa o tile da posição REAL
+          // dela, não o ponto cru do clique (mesma armadilha da árvore).
+          rx = Math.floor(alvo.sheep.x) + 0.5;
+          ry = Math.floor(alvo.sheep.y) + 0.5;
+          marcaId = alvo.sheep.id;
         }
         // Mesmo retorno visual de quando se manda um aldeão pronto colher: o anel
         // verde no chão do alvo. Sem ele não dava pra saber se a ordem pegou.
