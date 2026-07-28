@@ -78,7 +78,7 @@ Ver [DEPLOY.md](DEPLOY.md) para o passo a passo completo. Os tropeços que já c
 
 | | |
 |---|---|
-| `bash start.sh` | sobe servidor + túnel. **Recusa** se a porta 8080 já responder. |
+| `bash start.sh` | compila o servidor e sobe servidor + túnel. **Recusa** se a 8080 já responder. |
 | `bash stop.sh` | derruba os dois. **Confere** que morreram; sai com erro se não. |
 | `bash watchdog.sh` | cão de guarda: a cada 5 min, se o servidor não responder, reergue. |
 | `bash phone-setup.sh` | registra os dois no boot (Termux:Boot). Roda 1× por aparelho. |
@@ -87,17 +87,30 @@ Ver [DEPLOY.md](DEPLOY.md) para o passo a passo completo. Os tropeços que já c
 deploy, chame esses dois — não reinvente o `pkill`, que foi como nasceu o bug do "no ar!"
 mentiroso (matava mal, o servidor velho sobrevivia, e o deploy declarava sucesso).
 
+⚠️ **O npm do Termux bloqueia `postinstall` por padrão.** Se o esbuild não compilar, o
+`start.sh` sobe pelo fonte (o site não cai) e avisa no log. Conserto:
+`npm install && npm approve-scripts esbuild`. Vale pra qualquer dependência nova com
+postinstall — no Windows instala calado, no celular não.
+
 ## Saúde do sistema (medido em 2026-07-28)
 
 | | |
 |---|---|
 | Disco no celular | 452 GB livres, 202 MB usados — **não é gargalo** |
-| RAM | 7 GB livres de 11 GB; a pilha toda usa 237 MB |
-| CPU parado | servidor ~0% · túnel ~2% de **um** núcleo (de 6) |
+| RAM | 7 GB livres de 11 GB |
+| CPU parado | **servidor 0,07%** · túnel ~2,9% de **um** núcleo (de 6) |
 | CPU em partida | o Age of AI é o que pesa (RTS com A* a 10 ticks/s). Os joguinhos não pesam. |
 
-Se a CPU parada subir de novo, procure **temporizador novo de alta frequência** — foi essa a
-causa da única vez que subiu.
+O servidor parado saiu de **1,32% → 0,07%** (95% a menos) com dois consertos, e os dois eram
+a mesma ideia: **nada deve rodar quando ninguém está usando.**
+
+1. O multiplayer da coleção tinha um `setInterval` de 50 ms no topo do módulo, rodando 24h
+   por dia com zero jogadores. Virou sob demanda (ver `online-games-ws.ts`).
+2. O servidor rodava com `tsx`, que mantém um **esbuild vivo pra sempre** transpilando em
+   tempo real — gastava mais CPU que o próprio servidor. Agora é buildado (`node dist/index.js`).
+
+Se a CPU parada subir de novo, procure **processo ou temporizador que não dorme**. Foi essa
+a causa das duas vezes.
 
 ## Riscos conhecidos (ainda não resolvidos)
 
