@@ -36,14 +36,20 @@ fallback da SPA. Sem isso, qualquer URL errada devolveria 200 com a página do A
 
 ## Onde mora cada projeto (fonte de verdade)
 
-| Projeto | Pasta no PC | Git | Papel |
+| Projeto | Pasta no PC | GitHub | Papel |
 |---|---|---|---|
-| **Age of AI** (o servidor de tudo) | `D:\age` | ✅ + [GitHub](https://github.com/alexvilelabah/age-of-ai) | jogo + servidor HTTP/WS |
-| **Coleção de jogos** | `D:\projetos\jogos-html` | ✅ local | gera a pasta `online-games/` (ver `DEPLOY.md` de lá) |
-| **Cube Range** (jogo de tiro) | `D:\projetos\tiro` | ✅ local | fonte do único jogo próprio da coleção |
+| **Age of AI** (o servidor de tudo) | `D:\age` | [age-of-ai](https://github.com/alexvilelabah/age-of-ai) — **público** | jogo + servidor HTTP/WS |
+| **Coleção de jogos** | `D:\projetos\jogos-html` | `jogos-html` — **privado** | gera a pasta `online-games/` (ver `DEPLOY.md` de lá) |
+| **Cube Range** (jogo de tiro) | `D:\projetos\tiro` | `cube-range` — **privado** | fonte do único jogo próprio da coleção |
 
-Só o Age of AI vai pro GitHub — **de propósito**. Os outros dois têm git **local**, que
-protege contra apagar/estragar sem querer, mas **não** contra o disco morrer.
+Só o Age of AI é **público**. Os outros dois são privados de propósito: servem de backup, não
+de publicação — os joguinhos da coleção são de outras pessoas e não há por que redistribuí-los.
+Por isso `jogos-fonte/` e `publico/` ficam fora do git: sobem só ~350 KB de código próprio.
+
+Auditoria antes do 1º push (28/07): nenhum segredo nos 30 arquivos. As credenciais do túnel
+vivem em `~/.cloudflared/` no celular, fora de qualquer repositório. **Se um dia abrir esses
+repositórios**, revise antes: o UUID do túnel citado no `DEPLOY.md` (identificador, não senha —
+mas é permanente) e a procedência do áudio embutido no `index.html` do Cube Range.
 
 A pasta `online-games/` fica no `.gitignore` deste repo de propósito (~50 MB de conteúdo de
 terceiros). Ela chega no celular por **cópia pelo cabo**, não por `git pull`.
@@ -117,16 +123,12 @@ a causa das duas vezes.
 
 ## Riscos conhecidos (ainda não resolvidos)
 
-1. **Não existe backup FORA deste PC** (tirando o Age of AI, que está no GitHub). Os três
-   projetos têm git, mas dois só localmente — se o disco morrer, morre junto. Resolver é
-   fácil: um repositório **privado** no GitHub para cada um, ou uma cópia num HD/nuvem.
-   ← *maior risco de perda hoje*
-2. **A cópia publicada do Cube Range fica atrasada** em relação ao fonte de
+1. **A cópia publicada do Cube Range fica atrasada** em relação ao fonte de
    `D:\projetos\tiro` — a sincronização entre as duas pastas é **manual** (já houve trabalho
    pronto que nunca foi ao ar). Ver o `LEIA-ME.md` de lá.
-3. **`D:\projetos\tiro\server.js` é um duplicado morto** do multiplayer real: protocolo
+2. **`D:\projetos\tiro\server.js` é um duplicado morto** do multiplayer real: protocolo
    divergente (ignora tiro e dano) e não usado em produção — o jogo publicado usa
    `/online-games/ws/<slug>`. Serve só para abrir o jogo por `file://`.
-4. **A raiz de `D:\age` acumulou coisa que não é do jogo** (`art-in`, `image`, `music`,
+3. **A raiz de `D:\age` acumulou coisa que não é do jogo** (`art-in`, `image`, `music`,
    backups de sprites). Está toda no `.gitignore`, então não vaza para o GitHub — mas é a
    origem da sensação de bagunça.
