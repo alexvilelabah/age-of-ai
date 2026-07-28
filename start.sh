@@ -24,17 +24,30 @@ if [ ! -f client/dist/index.html ]; then
   npm run build -w client
 fi
 
-# SEMPRE reconstrói o servidor (leva ~15 ms). Assim é impossível rodar código
-# velho sem perceber: o que está no ar é sempre o que está no fonte.
+# SEMPRE tenta reconstruir o servidor (leva ~15 ms). Assim é impossível rodar
+# código velho sem perceber: o que está no ar é sempre o que está no fonte.
 #
 # Por que o servidor é BUILDADO e não roda direto do TypeScript: rodar com `tsx`
 # mantém um processo esbuild vivo pra sempre só pra transpilar em tempo real —
 # medido no celular, ele gastava 0,47% de CPU parado (MAIS que o próprio
 # servidor) e uns 30 MB de RAM, 24h por dia, sem fazer nada. Ferramenta de
-# desenvolvimento não tem o que fazer em produção. (`npm run start:tsx` ainda
-# existe pra depurar rodando do fonte.)
+# desenvolvimento não tem o que fazer em produção.
+#
+# MAS o build é uma OTIMIZAÇÃO, nunca um requisito: se ele falhar, sobe pelo
+# fonte e o site fica no ar do mesmo jeito. Isto não é zelo excessivo — na
+# primeira vez que o build entrou, o esbuild não estava instalado no celular
+# (o npm do Termux bloqueia postinstall por padrão), o `set -e` abortou o
+# start.sh, e o site FICOU FORA DO AR até alguém perceber. Otimização que
+# derruba o serviço não vale a CPU que economiza.
 echo "[start] compilando o servidor..."
-npm run build -w server
+if npm run build -w server && [ -f server/dist/index.js ]; then
+  MODO_START="start"        # node dist/index.js — sem esbuild vivo
+else
+  echo "[start] AVISO: o build falhou. Subindo pelo FONTE (tsx) para não ficar fora" >&2
+  echo "        do ar. Isso mantém um esbuild vivo (~0,5% de CPU a mais)." >&2
+  echo "        Conserto: 'npm install' e, no Termux, 'npm approve-scripts esbuild'." >&2
+  MODO_START="start:tsx"
+fi
 
 # Descobre o túnel pelas credenciais em ~/.cloudflared (sem ID fixo no código).
 CREDS="$(ls "$HOME"/.cloudflared/*.json 2>/dev/null | head -1)"
@@ -53,8 +66,8 @@ if curl -sf -m 3 http://127.0.0.1:8080/status >/dev/null 2>&1; then
 fi
 
 echo "== Age of AI =="
-echo "[1/2] subindo o servidor na porta 8080..."
-PORT=8080 npm run start -w server &
+echo "[1/2] subindo o servidor na porta 8080 (modo: $MODO_START)..."
+PORT=8080 npm run "$MODO_START" -w server &
 SRV=$!
 
 # Encerra o servidor junto se o script for interrompido.
