@@ -118,7 +118,7 @@ export class GameScreen {
     root.appendChild(this.connLost.el);
 
     // Overlay de PAUSA (aparece pra todos quando alguém aperta P).
-    this.pauseOverlay = el('div', 'pause-overlay hidden');
+    this.pauseOverlay = el('div', 'pause-overlay so-aviso hidden');
     const pbox = el('div', 'pause-box');
     pbox.appendChild(el('div', 'pause-title', t('pause.title')));
     this.pauseBy = el('div', 'pause-by', '');

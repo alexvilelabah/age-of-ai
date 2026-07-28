@@ -504,8 +504,16 @@ input.txt:focus { border-color: var(--gold); }
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.45);
-  pointer-events: none;
+  /* ACEITA clique por padrão. Isto é o jeito SEGURO: quem tem botão funciona sem
+     precisar lembrar de nada. O contrário (bloquear por padrão) já mordeu — os
+     avisos de "fim da partida" e de derrota apareciam com dois botões e NENHUM
+     dos dois clicava, porque herdavam o `pointer-events: none` do aviso de pausa.
+     Quem NÃO quer receber clique põe a classe `so-aviso` (ver abaixo). */
+  pointer-events: auto;
 }
+/* Aviso puramente INFORMATIVO (a pausa): aparece por cima mas não intercepta o
+   ponteiro — quem está jogando continua podendo mexer na tela por baixo. */
+.pause-overlay.so-aviso { pointer-events: none; }
 .pause-box { text-align: center; }
 .pause-title {
   font-size: 64px;
