@@ -20,9 +20,21 @@ termux-wake-lock 2>/dev/null || true
 
 # Garante o build de produção do cliente (client/dist).
 if [ ! -f client/dist/index.html ]; then
-  echo "[start] gerando build de produção..."
+  echo "[start] gerando build de produção do cliente..."
   npm run build -w client
 fi
+
+# SEMPRE reconstrói o servidor (leva ~15 ms). Assim é impossível rodar código
+# velho sem perceber: o que está no ar é sempre o que está no fonte.
+#
+# Por que o servidor é BUILDADO e não roda direto do TypeScript: rodar com `tsx`
+# mantém um processo esbuild vivo pra sempre só pra transpilar em tempo real —
+# medido no celular, ele gastava 0,47% de CPU parado (MAIS que o próprio
+# servidor) e uns 30 MB de RAM, 24h por dia, sem fazer nada. Ferramenta de
+# desenvolvimento não tem o que fazer em produção. (`npm run start:tsx` ainda
+# existe pra depurar rodando do fonte.)
+echo "[start] compilando o servidor..."
+npm run build -w server
 
 # Descobre o túnel pelas credenciais em ~/.cloudflared (sem ID fixo no código).
 CREDS="$(ls "$HOME"/.cloudflared/*.json 2>/dev/null | head -1)"

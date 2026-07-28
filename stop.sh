@@ -7,7 +7,11 @@
 # velho ainda estava lá) — e o teste de saúde do deploy passava, porque o
 # processo ANTIGO respondia. Resultado: o deploy anunciava "no ar!" com o código
 # velho rodando. Sai com erro pra quem chamou poder parar em vez de mentir.
-PADROES=('cloudflared tunnel' 'src/index.ts' 'npm run start')
+# 'dist/index.js' = o servidor buildado (o normal em produção); 'src/index.ts' =
+# o mesmo servidor rodando do fonte por tsx (`npm run start:tsx` / `npm run dev`).
+# Os dois estão aqui de propósito: esquecer um deixaria o servidor vivo e o
+# start.sh seguinte subiria um natimorto por cima.
+PADROES=('cloudflared tunnel' 'dist/index.js' 'src/index.ts' 'npm run start')
 
 vivos() {
   local p n=0
