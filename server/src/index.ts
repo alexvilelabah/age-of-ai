@@ -14,7 +14,7 @@ import { GAME_PORT } from '@age/shared';
 import type { ClientMessage, ServerMessage } from '@age/shared';
 import { Lobby } from './lobby';
 import { readMetrics, MONITOR_HTML } from './metrics';
-import { conectarJogo, slugDoPath } from './online-games-ws';
+import { conectarJogo, slugDoPath, estadoDasSalas } from './online-games-ws';
 
 const lobby = new Lobby();
 const PORT = Number(process.env.PORT) || GAME_PORT;
@@ -137,7 +137,7 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): void 
     }
     if (u.searchParams.get('data') === '1') {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });
-      res.end(JSON.stringify({ ...readMetrics(), ...lobby.stats() }));
+      res.end(JSON.stringify({ ...readMetrics(), ...lobby.stats(), colecao: estadoDasSalas() }));
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'X-Robots-Tag': 'noindex, nofollow' });
       res.end(MONITOR_HTML);

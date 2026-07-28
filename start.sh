@@ -32,6 +32,14 @@ if [ -z "$CREDS" ]; then
 fi
 UUID="$(basename "$CREDS" .json)"
 
+# Já tem servidor de pé? Aborta. Sem isto, o node novo não consegue pegar a 8080,
+# morre calado, e o ANTIGO segue respondendo — o deploy então "passa" no teste de
+# saúde e anuncia sucesso com o código velho no ar. Pare-o com `bash stop.sh`.
+if curl -sf -m 3 http://127.0.0.1:8080/status >/dev/null 2>&1; then
+  echo "ERRO: a porta 8080 já responde — tem servidor rodando. Rode 'bash stop.sh' antes." >&2
+  exit 1
+fi
+
 echo "== Age of AI =="
 echo "[1/2] subindo o servidor na porta 8080..."
 PORT=8080 npm run start -w server &

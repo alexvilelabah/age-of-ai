@@ -31,6 +31,7 @@
 import type { WebSocket } from 'ws';
 
 const TICK_MS = 50;          // 20 Hz de broadcast
+const PING_MS = 30000;       // ping/pong: derruba conexão que morreu sem avisar
 const LIMITE_MUNDO = 400;    // teto de coordenada (arenas da coleção são bem menores)
 const MAX_POR_SALA = 16;
 const MAX_SALAS = 24;
@@ -120,6 +121,7 @@ export function conectarJogo(ws: WebSocket, slug: string): void {
     hp: 100, vivo: true, abates: 0, respondeu: true
   };
   sala.jogadores.set(id, p);
+  ajustarLaços(); // entrou alguém: talvez agora precise de broadcast/ping
 
   enviar(ws, { t: 'welcome', id, players: retrato(sala, id) });
   paraSala(sala, { t: 'join', id, x: p.x, y: p.y, z: p.z, yaw: p.yaw }, id);
@@ -195,6 +197,7 @@ export function conectarJogo(ws: WebSocket, slug: string): void {
     paraSala(s, { t: 'leave', id });
     console.log(`[online-games:${slug}] jogador ${id} saiu (${s.jogadores.size} na sala)`);
     if (s.jogadores.size === 0) salas.delete(slug);  // sala vazia não fica ocupando nada
+    ajustarLaços(); // saiu alguém: talvez não precise mais de temporizador nenhum
   });
 
   ws.on('error', () => { try { ws.close(); } catch { /* ignora */ } });
@@ -203,15 +206,15 @@ export function conectarJogo(ws: WebSocket, slug: string): void {
 // UM laço global para todas as salas (mais barato que um timer por sala, e não
 // deixa timer órfão quando uma sala some). Sala com menos de 2 jogadores não
 // precisa de broadcast: o cliente sozinho joga contra os bots locais dele.
-setInterval(() => {
+function pulsoEstados(): void {
   for (const sala of salas.values()) {
     if (sala.jogadores.size < 2) continue;
     paraSala(sala, { t: 'states', players: retrato(sala) });
   }
-}, TICK_MS);
+}
 
 // Conexão que morreu sem avisar (aba fechada, túnel caiu): ping/pong derruba.
-setInterval(() => {
+function pulsoPing(): void {
   for (const sala of salas.values()) {
     for (const [, p] of sala.jogadores) {
       if (!p.respondeu) { try { p.ws.terminate(); } catch { /* ignora */ } continue; }
@@ -219,9 +222,43 @@ setInterval(() => {
       if (p.ws.readyState === 1) { try { p.ws.ping(); } catch { /* ignora */ } }
     }
   }
-}, 30000);
+}
 
-/** Só para diagnóstico (painel /sistema, logs). */
+let laçoEstados: ReturnType<typeof setInterval> | null = null;
+let laçoPing: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Liga/desliga os temporizadores conforme a demanda REAL. Chamado sempre que a
+ * contagem de jogadores muda (entrou/saiu).
+ *
+ * Por que não deixar rodando sempre (era assim antes): o servidor mora num
+ * CELULAR, e um `setInterval` de 50 ms nunca para — acordava o processo 20x por
+ * segundo, 24h por dia, pra iterar um mapa VAZIO. Não pesava quase nada (medido:
+ * ~0,85% de um núcleo), mas era o único temporizador de alta frequência ligado
+ * com o servidor parado, e impedia o processo de dormir de verdade. Com ninguém
+ * jogando, agora não existe temporizador nenhum aqui.
+ */
+function ajustarLaços(): void {
+  let temAlguem = false;
+  let precisaBroadcast = false;
+  for (const s of salas.values()) {
+    if (s.jogadores.size > 0) temAlguem = true;
+    if (s.jogadores.size >= 2) { precisaBroadcast = true; break; }
+  }
+
+  // 20 Hz só faz sentido quando há alguém pra receber o estado de OUTRO alguém.
+  if (precisaBroadcast && !laçoEstados) laçoEstados = setInterval(pulsoEstados, TICK_MS);
+  else if (!precisaBroadcast && laçoEstados) { clearInterval(laçoEstados); laçoEstados = null; }
+
+  // O ping vale já com 1 jogador: é ele que derruba conexão fantasma.
+  if (temAlguem && !laçoPing) laçoPing = setInterval(pulsoPing, PING_MS);
+  else if (!temAlguem && laçoPing) { clearInterval(laçoPing); laçoPing = null; }
+}
+
+/** Diagnóstico (painel /sistema e teste): salas ocupadas e temporizadores ligados. */
 export function estadoDasSalas() {
-  return [...salas.values()].map(s => ({ slug: s.slug, jogadores: s.jogadores.size }));
+  return {
+    salas: [...salas.values()].map(s => ({ slug: s.slug, jogadores: s.jogadores.size })),
+    laços: { estados: laçoEstados !== null, ping: laçoPing !== null },
+  };
 }

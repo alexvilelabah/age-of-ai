@@ -35,12 +35,10 @@ while true; do
   curl -sf -m 10 http://127.0.0.1:8080/status >/dev/null 2>&1 && continue
 
   say "servidor NÃO respondeu -> reiniciando"
-  # Limpa restos pra não subir túnel/servidor duplicado (caso um pedaço tenha
-  # sobrevivido). Matar o cloudflared faz o start.sh antigo se desenrolar sozinho.
-  pkill -f "cloudflared tunnel" 2>/dev/null || true
-  pkill -f "src/index.ts"       2>/dev/null || true
-  pkill -f "npm run start"      2>/dev/null || true
-  sleep 2
+  # Limpa restos pelo stop.sh (um jeito só de parar, no repo inteiro): ele mata,
+  # CONFERE que morreu e libera a porta. Sem isso o start.sh abaixo subiria um
+  # servidor natimorto por cima de um pedaço sobrevivente.
+  bash stop.sh >> "$LOG" 2>&1 || say "stop.sh reclamou (segue mesmo assim)"
   # nohup: o start.sh novo não morre junto se este cão de guarda for morto depois.
   nohup bash start.sh >> "$LOG" 2>&1 &
   sleep 30   # deixa o servidor subir antes de a próxima volta checar de novo
