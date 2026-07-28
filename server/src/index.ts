@@ -189,10 +189,31 @@ const httpServer = http.createServer(serveStatic);
 // WS com flag de vitalidade p/ o heartbeat (detecção de conexão morta).
 type HeartbeatWS = WebSocket & { isAlive?: boolean };
 
+// Memoriza o JSON de cada mensagem. O snapshot vai pra TODOS os jogadores no
+// mesmo tick e antes era serializado uma vez POR DESTINATÁRIO — sempre o mesmo
+// texto. Medido: 216 µs por serialização de um snapshot de fim de partida
+// (~53 KB); com 4 jogadores eram 4× isso, 5 vezes por segundo.
+//
+// WeakMap: a entrada some junto com a mensagem, sem vazar memória. Não há tempo
+// de vida a gerenciar — o coletor de lixo faz sozinho.
+//
+// ⚠️ CONTRATO: NÃO altere uma ServerMessage depois de enviá-la — o segundo
+// destinatário receberia o texto do primeiro. Hoje todo envio em laço respeita
+// isso: ou cria objeto novo por iteração (o `gameStart` faz, porque o campo
+// `you` muda por jogador), ou manda um objeto pronto que ninguém mexe
+// (snapshot, roomList, chat, roomState). Se precisar variar por jogador, crie
+// um objeto por jogador — nunca reaproveite mutando.
+const jsonMemo = new WeakMap<object, string>();
+
 function safeSend(ws: WebSocket, msg: ServerMessage): void {
   if (ws.readyState !== ws.OPEN) return;
   try {
-    ws.send(JSON.stringify(msg));
+    let raw = jsonMemo.get(msg);
+    if (raw === undefined) {
+      raw = JSON.stringify(msg);
+      jsonMemo.set(msg, raw);
+    }
+    ws.send(raw);
   } catch (err) {
     console.error('[ws] falha ao enviar mensagem', err);
   }
@@ -210,7 +231,33 @@ function safeSend(ws: WebSocket, msg: ServerMessage): void {
 // Age of AI. A regra é conservadora: só o prefixo da coleção vai para o outro
 // servico; QUALQUER outro path — inclusive o /ws do Age of AI — continua indo
 // para o lobby, exatamente como antes desta mudança.
-const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+// COMPRESSÃO (perMessageDeflate): o ganho mais barato que existe aqui. O
+// snapshot é JSON repetitivo, então compacta pra ~12% do tamanho. Medido num
+// snapshot de fim de partida: 53 KB → 6,5 KB.
+//
+// Escala do problema que isto resolve: o snapshot vai 5×/s pra cada jogador, e a
+// 53 KB isso dava ~266 KB/s POR PESSOA — com 4 jogadores, 8,3 Mbps de UPLOAD
+// saindo de um CELULAR na internet de casa. Era o gargalo real do jogo (a CPU
+// não era). Compactado cai pra ~1 Mbps.
+//
+// Nível 1 de propósito: comprime em 153 µs contra 421 µs do nível 6, e o tamanho
+// final quase não muda (12% vs 10%) — para JSON, o nível alto só queima CPU. Num
+// celular isso importa.
+//
+// `threshold`: mensagem pequena (comando, chat, ping) não compensa compactar — o
+// cabeçalho do deflate custa mais que a economia.
+//
+// É transparente: o navegador descompacta sozinho e o JavaScript recebe o mesmo
+// objeto de antes. Nada muda no jogo, nem visual nem de regra.
+const wss = new WebSocketServer({
+  noServer: true,
+  maxPayload: 64 * 1024,
+  perMessageDeflate: {
+    zlibDeflateOptions: { level: 1, memLevel: 7 },
+    threshold: 1024,
+    concurrencyLimit: 4,
+  },
+});
 const jogosWss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
 const JOGOS_WS_BASE = '/online-games/ws';
 
